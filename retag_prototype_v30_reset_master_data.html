@@ -1,0 +1,2081 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<!-- V13: pricing + separated collections + narrow accounting/formula fixes -->
+<title>ريتاج — Prototype V21</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#eef1f5;font-family:Arial,Tahoma,sans-serif;color:#172033}
+.app{max-width:520px;margin:auto;min-height:100vh;background:#f8fafc}
+header{position:sticky;top:0;z-index:5;background:#fff;padding:15px 16px;border-bottom:1px solid #e5e7eb}
+.top{display:flex;justify-content:space-between;align-items:center}.brand{font-size:24px;font-weight:900}.sub{font-size:12px;color:#667085;margin-top:4px}
+main{padding:14px 14px 88px}.section{display:flex;justify-content:space-between;align-items:center;margin:18px 2px 9px}.section h2{font-size:18px;margin:0}
+.card{background:#fff;border:1px solid #e3e7ee;border-radius:16px;padding:14px;margin-bottom:10px;box-shadow:0 2px 8px #00000008}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+button{border:0;border-radius:12px;padding:11px 13px;font-weight:800;background:#111827;color:#fff;cursor:pointer}button.secondary{background:#eef2f7;color:#172033}button.danger{background:#fee2e2;color:#991b1b}button.small{padding:8px 10px;font-size:12px}
+.actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
+.metric span,.muted{font-size:12px;color:#667085}.metric b{font-size:22px;display:block;margin-top:5px}
+.alert{border-right:4px solid #ef4444}.warn{border-right:4px solid #f59e0b}.good{border-right:4px solid #22c55e}
+input,select,textarea{width:100%;padding:12px;border:1px solid #d6dce5;border-radius:11px;background:#fff;font-size:14px;margin-top:5px}textarea{min-height:80px;resize:vertical}.field{margin-bottom:10px}.field label{font-size:12px;color:#596273}.formrow{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.item{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:11px 0;border-bottom:1px solid #edf0f4}.item:last-child{border-bottom:0}.title{font-weight:850}.tag{display:inline-block;padding:4px 8px;border-radius:99px;background:#eef2ff;font-size:11px;margin-top:5px}
+.red{color:#b91c1c}.green{color:#15803d}.orange{color:#b45309}
+.bottom{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:min(520px,100%);background:#fff;border-top:1px solid #e5e7eb;display:grid;grid-template-columns:repeat(5,1fr);padding:6px 5px calc(6px + env(safe-area-inset-bottom));z-index:10}.bottom button{background:transparent;color:#667085;padding:6px 2px;font-size:11px}.bottom button.active{color:#111827;font-weight:900}
+.modal{position:fixed;inset:0;background:#0007;z-index:20;display:flex;align-items:flex-end}.sheet{background:#fff;width:min(520px,100%);margin:auto;border-radius:20px 20px 0 0;padding:16px;max-height:90vh;overflow:auto}.hidden{display:none!important}
+.close{float:left;border-radius:50%;background:#eef2f7;color:#172033;padding:8px 11px}.toast{position:fixed;bottom:78px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:11px 15px;border-radius:12px;z-index:60;font-size:13px}
+.quick{font-size:13px}.inlineadd{display:flex;gap:6px;align-items:end}.inlineadd>div{flex:1}.inlineadd button{white-space:nowrap}
+.empty{text-align:center;color:#667085;padding:24px}
+</style>
+</head>
+<body>
+<div class="app">
+<header><div class="top"><div><div class="brand">مصنعي</div><div class="sub">أقل إدخال → أكبر قرار</div></div><button class="secondary small" onclick="resetDemo()">تصفير البيانات</button></div></header>
+<main id="main"></main>
+<nav class="bottom">
+<button onclick="show('home')" id="n-home">🏠<br>الرئيسية</button>
+<button onclick="show('models')" id="n-models">👗<br>الموديلات</button>
+<button onclick="show('stock')" id="n-stock">🧵<br>المخزن</button>
+<button onclick="show('sales')" id="n-sales">🧾<br>المبيعات</button>
+<button onclick="show('more')" id="n-more">☰<br>المزيد</button>
+</nav>
+</div>
+<div id="modal" class="modal hidden"><div class="sheet"><button class="close" onclick="closeModal()">×</button><div id="modalBody"></div></div></div>
+<div id="toast" class="toast hidden"></div>
+
+<script>
+const blank={suppliers:[],materials:[],customers:[],models:[],purchases:[],cuts:[],sales:[],payments:[],supplierPayments:[],returns:[],expenses:[],requests:[]};
+let db=JSON.parse(localStorage.getItem('masna3_v6')||'null')||structuredClone(blank);
+let page='home', activeModel=null;
+function save(){localStorage.setItem('masna3_v6',JSON.stringify(db))}
+function esc(x){return String(x??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
+function money(n){return Number(n||0).toLocaleString('ar-EG')+' ج'}
+function toast(t){let e=document.getElementById('toast');e.textContent=t;e.classList.remove('hidden');setTimeout(()=>e.classList.add('hidden'),1800)}
+function closeModal(){document.getElementById('modal').classList.add('hidden')}
+function modal(title,body){document.getElementById('modalBody').innerHTML='<h2 style="margin:2px 0 16px">'+title+'</h2>'+body;document.getElementById('modal').classList.remove('hidden')}
+function add(type){const names={supplier:'مورد',material:'خامة',customer:'عميل',model:'موديل'};let body='';
+if(type==='supplier')body=`<div class="field"><label>اسم المورد</label><input id="f_name"></div><div class="field"><label>الهاتف</label><input id="f_phone"></div><button style="width:100%" onclick="saveMaster('supplier')">حفظ المورد</button>`;
+if(type==='customer')body=`<div class="field"><label>اسم العميل</label><input id="f_name"></div><div class="field"><label>الهاتف</label><input id="f_phone"></div><button style="width:100%" onclick="saveMaster('customer')">حفظ العميل</button>`;
+if(type==='material')body=`<div class="field"><label>اسم الخامة</label><input id="f_name"></div><div class="formrow"><div class="field"><label>النوع</label><select id="f_kind"><option>قماش</option><option>إكسسوار</option></select></div><div class="field"><label>الوحدة</label><select id="f_unit"><option>متر</option><option>قطعة</option></select></div></div><div class="field"><label>اللون</label><input id="f_color"></div><div class="field"><label>حد إعادة الطلب</label><input id="f_threshold" type="number" value="0"></div><button style="width:100%" onclick="saveMaster('material')">حفظ الخامة</button>`;
+if(type==='model')body=`<div class="field"><label>اسم الموديل</label><input id="f_name"></div><div class="field"><label>سعر البيع الرسمي — اختياري</label><input id="f_price" type="number" min="0" step="0.01" value="0" placeholder="سيُطلب عند الفاتورة إذا لم تحدده الآن"></div><div class="field"><label>ملاحظات</label><textarea id="f_note"></textarea></div><button style="width:100%" onclick="saveMaster('model')">حفظ الموديل</button>`;
+modal('إضافة '+names[type],body)}
+function saveMaster(type){let name=document.getElementById('f_name').value.trim();if(!name)return alert('اكتب الاسم');let obj={id:Date.now(),name};
+if(type==='supplier'||type==='customer')obj.phone=document.getElementById('f_phone').value;
+if(type==='material'){obj.kind=f_kind.value;obj.unit=f_unit.value;obj.color=f_color.value;obj.threshold=+f_threshold.value||0;obj.stock=0}
+if(type==='model'){obj.price=+f_price.value||0;obj.note=f_note.value;obj.ready=0;obj.inProgress=0;obj.required=0;obj.produced=0;obj.sold=0;obj.returned=0;obj.recipe=[]}
+db[type+'s'].push(obj);save();closeModal();toast('تمت الإضافة');render()}
+
+function show(p){page=p;document.querySelectorAll('.bottom button').forEach(x=>x.classList.remove('active'));let n=document.getElementById('n-'+p);if(n)n.classList.add('active');render()}
+function render(){let m=document.getElementById('main');if(page==='home')home(m);if(page==='models')models(m);if(page==='stock')stock(m);if(page==='sales')sales(m);if(page==='more')more(m);if(page==='model')modelDetail(m);if(page==='customers')customers(m);if(page==='suppliers')suppliers(m);if(page==='expenses')expenses(m);if(page==='requests')requests(m);if(page==='accounts')accounts(m)}
+function home(m){
+let ready=db.models.reduce((a,x)=>a+(+x.ready||0),0), req=db.models.reduce((a,x)=>a+(+x.required||0),0), inprog=db.models.reduce((a,x)=>a+(+x.inProgress||0),0);
+m.innerHTML=`<div class="section"><h2>ملخص المصنع</h2><button class="small" onclick="show('more')">كل الأقسام</button></div>
+<div class="grid3"><div class="card metric"><span>🛠️ جاري التجهيز</span><b>${inprog}</b></div><div class="card metric"><span>📦 الجاهز</span><b>${ready}</b></div><div class="card metric"><span>📋 المطلوب</span><b>${req}</b></div></div>
+<div class="card"><div class="section" style="margin-top:0"><h2>⚡ إجراءات سريعة</h2></div><div class="grid"><button onclick="cutStart()">✂️ ابدأ قصّة</button><button onclick="purchase()">🛒 شراء خامة</button><button onclick="sale()">🧾 فاتورة</button><button onclick="ret()">↩️ مرتجع</button></div></div>
+<div class="section"><h2>🏭 ما يتم تجهيزه الآن</h2></div>${db.models.filter(x=>x.inProgress>0).map(x=>`<div class="card" onclick="openModel(${x.id})"><div class="item"><div><div class="title">${esc(x.name)}</div><span class="tag">جاري التجهيز</span></div><b>${x.inProgress} قطعة</b></div></div>`).join('')||'<div class="card empty">لا يوجد إنتاج جاري التجهيز الآن</div>'}
+<div class="section"><h2>🚨 يحتاج قرار</h2></div>${db.materials.filter(x=>x.threshold>0&&x.stock<=x.threshold).map(x=>`<div class="card alert"><div class="item"><div>${esc(x.name)} ${x.color?'- '+esc(x.color):''}</div><b class="red">${x.stock} ${x.unit}</b></div></div>`).join('')||'<div class="card good">لا توجد تنبيهات مخزون</div>'}`}
+
+function models(m){m.innerHTML=`<div class="section"><h2>👗 الموديلات</h2><button onclick="add('model')" class="small">+ إضافة موديل</button></div>${db.models.map(x=>`<div class="card" onclick="openModel(${x.id})"><div class="split"><div><div class="title">${esc(x.name)}</div><div class="muted">سعر البيع: ${money(x.price)}</div></div><div style="text-align:left"><b>${x.ready||0}</b><div class="muted">جاهز</div></div></div><div class="actions"><span class="tag">📋 مطلوب ${x.required||0}</span><span class="tag">🛠️ تجهيز ${x.inProgress||0}</span></div></div>`).join('')||'<div class="card empty">أضف أول موديل</div>'}`}
+
+function stock(m){m.innerHTML=`<div class="section"><h2>🧵 المخزن</h2><button onclick="add('material')" class="small">+ إضافة خامة</button></div><div class="card"><button style="width:100%" onclick="purchase()">+ شراء خامة</button></div>${db.materials.map(x=>`<div class="card ${x.threshold>0&&x.stock<=x.threshold?'alert':''}"><div class="split"><div><div class="title">${esc(x.name)} ${x.color?'— '+esc(x.color):''}</div><div class="muted">${esc(x.kind)} — ${esc(x.unit)}</div></div><div><b class="${x.threshold>0&&x.stock<=x.threshold?'red':''}">${x.stock||0}</b><div class="muted">${x.unit}</div></div></div></div>`).join('')||'<div class="card empty">أضف أول خامة</div>'}`}
+
+function sales(m){m.innerHTML=`<div class="section"><h2>🧾 المبيعات</h2><button onclick="sale()" class="small">+ فاتورة</button></div>${db.sales.map(x=>{let c=db.customers.find(c=>c.id===x.customerId),mo=db.models.find(z=>z.id===x.modelId);return `<div class="card"><div class="split"><div><div class="title">${esc(c?.name||'عميل')}</div><div class="muted">${esc(mo?.name||'موديل')} — ${x.qty} قطعة</div></div><b>${money(x.total)}</b></div></div>`}).join('')||'<div class="card empty">لا توجد فواتير</div>'}`}
+
+function more(m){m.innerHTML=`<div class="section"><h2>الأقسام</h2></div><div class="grid">
+<button onclick="show('customers')">👥 العملاء</button><button onclick="show('suppliers')">🚚 الموردين</button><button onclick="show('expenses')">💸 المصروفات</button><button onclick="show('requests')">📋 طلبات العملاء</button><button onclick="show('accounts')">💰 الحسابات</button><button onclick="show('stock')">🧵 المخزن</button></div>`}
+function customers(m){m.innerHTML=`<div class="section"><h2>👥 العملاء</h2><button onclick="add('customer')" class="small">+ إضافة عميل</button></div>${db.customers.map(c=>{let sold=db.sales.filter(s=>s.customerId===c.id).reduce((a,s)=>a+s.total,0),pay=db.payments.filter(p=>p.customerId===c.id).reduce((a,p)=>a+p.amount,0);return `<div class="card"><div class="split"><div class="title">${esc(c.name)}</div><b>${money(sold-pay)}</b></div><div class="muted">مبيعات ${money(sold)} — دفعات ${money(pay)}</div></div>`}).join('')||'<div class="card empty">أضف أول عميل</div>'}`}
+function suppliers(m){m.innerHTML=`<div class="section"><h2>🚚 الموردين</h2><button onclick="add('supplier')" class="small">+ إضافة مورد</button></div>${db.suppliers.map(s=>`<div class="card"><div class="title">${esc(s.name)}</div><div class="muted">${esc(s.phone||'')}</div></div>`).join('')||'<div class="card empty">أضف أول مورد</div>'}`}
+function expenses(m){m.innerHTML=`<div class="section"><h2>💸 المصروفات</h2><button onclick="expense()" class="small">+ مصروف</button></div>${db.expenses.map(e=>`<div class="card"><div class="split"><div><b>${esc(e.category)}</b><div class="muted">${esc(e.note||'')}</div></div><b>${money(e.amount)}</b></div></div>`).join('')||'<div class="card empty">لا توجد مصروفات</div>'}`}
+function requests(m){m.innerHTML=`<div class="section"><h2>📋 طلبات العملاء</h2><button onclick="requestAdd()" class="small">+ طلب</button></div>${db.requests.map(r=>{let c=db.customers.find(x=>x.id===r.customerId),mo=db.models.find(x=>x.id===r.modelId);return `<div class="card"><div class="split"><div>${esc(c?.name||'')}<div class="muted">${esc(mo?.name||'')}</div></div><b>${r.qty}</b></div></div>`}).join('')||'<div class="card empty">لا توجد طلبات</div>'}`}
+function accounts(m){let rec=db.sales.reduce((a,s)=>a+s.total,0)-db.payments.reduce((a,p)=>a+p.amount,0), exp=db.expenses.reduce((a,e)=>a+e.amount,0), rev=db.sales.reduce((a,s)=>a+s.total,0);m.innerHTML=`<div class="section"><h2>💰 الحسابات</h2></div><div class="grid"><div class="card metric"><span>ليا</span><b>${money(rec)}</b></div><div class="card metric"><span>المصروفات</span><b>${money(exp)}</b></div></div><div class="card metric"><span>المبيعات</span><b>${money(rev)}</b></div>`}
+
+function openModel(id){activeModel=id;page='model';render()}
+function modelDetail(m){let x=db.models.find(z=>z.id===activeModel);if(!x){show('models');return}m.innerHTML=`<div class="section"><button class="back secondary small" onclick="show('models')">رجوع</button><h2>${esc(x.name)}</h2></div><div class="card"><div class="grid3"><div class="metric"><span>🛠️ تجهيز</span><b>${x.inProgress}</b></div><div class="metric"><span>📦 جاهز</span><b>${x.ready}</b></div><div class="metric"><span>📋 مطلوب</span><b>${x.required}</b></div></div></div><div class="card"><div class="title">سعر البيع الرسمي</div><div class="big">${money(x.price)}</div><div class="actions"><button onclick="cutStart(${x.id})">✂️ ابدأ قصّة</button><button class="secondary" onclick="production(${x.id})">🏭 تسجيل إنتاج</button></div></div><div class="card"><div class="title">إضافة خامة للموديل</div><div class="inlineadd"><div><select id="recipeMat">${db.materials.map(z=>`<option value="${z.id}">${esc(z.name)} ${z.color?'— '+esc(z.color):''}</option>`).join('')}</select></div><button onclick="recipeAdd(${x.id})">+ إضافة</button></div>${x.recipe.map(r=>`<div class="item"><span>${esc(db.materials.find(z=>z.id===r.materialId)?.name||'')}</span><b>${r.qty} / قطعة</b></div>`).join('')}</div><div class="card"><div class="title">✂️ سجل القصّات</div>
+${db.cuts.filter(c=>c.modelId===x.id).map(c=>{let mat=db.materials.find(z=>z.id===c.materialId);return `<div class="item"><div><div class="title">${c.status}</div><div class="muted">${esc(mat?.name||'قماش')} — ${c.fabricQty} ${esc(mat?.unit||'متر')} → ${c.pieces||0} قطعة</div></div><b>${c.pieces?c.actualPerPiece.toFixed(2):'—'} م/قطعة</b></div>`}).join('')||'<div class="empty">لا توجد قصّات</div>'}</div>
+<div class="card"><div class="title">📝 ملاحظات</div><div class="muted">${esc(x.note||'لا توجد ملاحظات')}</div></div>`}
+
+function purchase(){let matOpts=db.materials.map(x=>`<option value="${x.id}">${esc(x.name)} ${x.color?'— '+esc(x.color):''}</option>`).join(''),supOpts=db.suppliers.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('');modal('شراء خامة',`<div class="field"><label>الصنف</label><div class="inlineadd"><div><select id="p_mat">${matOpts}</select></div><button class="secondary" onclick="closeModal();add('material')">+ خامة</button></div></div><div class="formrow"><div class="field"><label>الكمية</label><input id="p_qty" type="number" min="0"></div><div class="field"><label>إجمالي الشراء</label><input id="p_total" type="number" min="0"></div></div><div class="field"><label>المورد</label><div class="inlineadd"><div><select id="p_sup">${supOpts}</select></div><button class="secondary" onclick="closeModal();add('supplier')">+ مورد</button></div></div><button style="width:100%" onclick="savePurchase()">حفظ</button>`)}
+function savePurchase(){let mat=db.materials.find(x=>x.id==p_mat.value),qty=+p_qty.value||0,total=+p_total.value||0;if(!mat||qty<=0)return alert('اختر خامة وأدخل الكمية');mat.stock=(mat.stock||0)+qty;db.purchases.push({id:Date.now(),materialId:mat.id,qty,total,supplierId:+p_sup.value||null,date:new Date().toISOString()});save();closeModal();toast('تم الشراء وتحديث المخزن');render()}
+function cutStart(modelId){
+ let opts=db.models.map(x=>`<option value="${x.id}" ${x.id===modelId?'selected':''}>${esc(x.name)}</option>`).join('');
+ modal('✂️ ابدأ قصّة',`
+ <div class="field"><label>الموديل</label><select id="c_model">${opts}</select></div>
+ <div class="field"><label>القماش الداخل للبنك</label><select id="c_mat">${db.materials.filter(x=>x.kind==='قماش').map(x=>`<option value="${x.id}">${esc(x.name)} ${x.color?'— '+esc(x.color):''} — المتاح ${x.stock||0} ${esc(x.unit)}</option>`).join('')}</select></div>
+ <div class="field"><label>كمية القماش المستخدمة</label><input id="c_fabric" type="number" min="0" step="0.01" placeholder="مثال: 500"></div>
+ <div id="c_stock_warn" class="red" style="font-size:12px"></div>
+ <div class="field"><label>ملاحظة</label><input id="c_note"></div>
+ <button style="width:100%" onclick="saveCut()">✂️ تسجيل بداية القص</button>`);
+ document.getElementById('c_fabric').addEventListener('input',checkCutStock);
+ document.getElementById('c_mat').addEventListener('change',checkCutStock);
+ checkCutStock();
+}
+function checkCutStock(){
+ let mat=db.materials.find(z=>z.id==c_mat.value),q=+c_fabric.value||0;
+ c_stock_warn.textContent=mat&&q>mat.stock?'⚠️ الكمية أكبر من المتاح في المخزن':'';
+}
+function saveCut(){
+ let x=db.models.find(z=>z.id==c_model.value),mat=db.materials.find(z=>z.id==c_mat.value),q=+c_fabric.value||0;
+ if(!x||!mat||q<=0)return alert('اختر الموديل والخامة وأدخل كمية القماش');
+ if(q>mat.stock)return alert('لا يمكن إدخال كمية أكبر من المخزون');
+ mat.stock-=q;
+ x.inProgress=(x.inProgress||0); // pieces remain unknown until bank finishes
+ db.cuts.push({id:Date.now(),modelId:x.id,materialId:mat.id,fabricQty:q,start:new Date().toISOString(),note:c_note.value,status:'جاري التجهيز القص',pieces:0});
+ save();closeModal();toast('بدأت القصّة وتم خصم القماش من المخزن');render()
+}
+function production(id){
+ let x=db.models.find(z=>z.id===id);
+ if(!x)return;
+ // A completed cut becomes "جاري التجهيز". Production is a separate step.
+ let cuts=db.cuts.filter(c=>c.modelId===id&&(c.status==='جاري التجهيز'||c.status==='جاري التجهيز القص'));
+ if(!cuts.length && (x.inProgress||0)>0){
+   // Compatibility for old prototype data: keep existing in-progress quantity usable.
+   let legacy=db.cuts.find(c=>c.modelId===id&&c.status==='تجهيز قديم');
+   if(!legacy){
+     legacy={id:Date.now(),modelId:id,materialId:null,fabricQty:0,start:null,end:null,pieces:x.inProgress,piecesProduced:x.inProgress,piecesReady:0,piecesInProgress:x.inProgress,status:'جاري التجهيز',legacy:true};
+     db.cuts.push(legacy);
+   }
+   cuts=[legacy];
+ }
+ if(!cuts.length)return alert('لا توجد كمية جاري تجهيزها لهذا الموديل');
+ let opts=cuts.map(c=>{
+   let mat=db.materials.find(z=>z.id===c.materialId);
+   let available=Number(c.piecesInProgress ?? c.pieces ?? 0);
+   return `<option value="${c.id}">${c.legacy?'إنتاج سابق':'قصّة '+c.id} — ${available} قطعة متاحة</option>`;
+ }).join('');
+ modal('🏭 تسجيل إنتاج',`
+ <div class="field"><label>القصّة / التشغيل</label><select id="prod_cut">${opts}</select></div>
+ <div class="field"><label>عدد القطع التي خلصت من التجهيز</label><input id="prod_qty" type="number" min="1" placeholder="مثال: 100"></div>
+ <div class="card" style="margin-top:8px"><div class="muted">المتاح الجاري تجهيزه: يظهر حسب القصّة المختارة. يمكن تسجيل الإنتاج على دفعات.</div></div>
+ <button style="width:100%" onclick="saveProduction(${id})">تسجيل الإنتاج</button>`);
+}
+function saveProduction(id){
+ let x=db.models.find(z=>z.id===id),c=db.cuts.find(z=>z.id==prod_cut.value),q=+prod_qty.value||0;
+ if(!c||q<=0)return alert('اكتب عدد القطع التي خلصت');
+ let available=Number(c.piecesInProgress ?? c.pieces ?? 0);
+ if(q>available)return alert('الكمية أكبر من الجاري تجهيزه');
+ c.piecesProduced=Number(c.piecesProduced ?? c.pieces ?? 0);
+ c.piecesReady=Number(c.piecesReady ?? 0)+q;
+ c.piecesInProgress=Math.max(0,c.piecesProduced-c.piecesReady);
+ c.pieces=q===available && c.piecesProduced===q ? c.piecesProduced : c.piecesProduced;
+ c.status=c.piecesInProgress>0?'جاري التجهيز':'مكتملة';
+ c.productionEnd=c.piecesInProgress===0?new Date().toISOString():c.productionEnd;
+ x.inProgress=Math.max(0,(x.inProgress||0)-q);
+ x.ready=(x.ready||0)+q;
+ x.produced=(x.produced||0);
+ save();closeModal();toast(`تم تسجيل إنتاج ${q} قطعة ونقلها للجاهز`);render()
+}
+function recipeAdd(id){let x=db.models.find(z=>z.id===id),mid=+recipeMat.value;if(!mid)return;let old=x.recipe.find(r=>r.materialId===mid);if(old)old.qty=+prompt('استهلاك القطعة',old.qty)||old.qty;else{x.recipe.push({materialId:mid,qty:+prompt('استهلاك القطعة')||0})}save();render()}
+function sale(){let cs=db.customers.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join(''),ms=db.models.map(x=>`<option value="${x.id}" data-ready="${x.ready}" data-price="${x.price}">${esc(x.name)}</option>`).join('');modal('🧾 فاتورة',`<div class="field"><label>العميل</label><div class="inlineadd"><div><select id="s_customer">${cs}</select></div><button class="secondary" onclick="closeModal();add('customer')">+ عميل</button></div></div><div class="field"><label>الموديل</label><select id="s_model" onchange="invoiceLive()">${ms}</select></div><div class="grid3"><div class="metric"><span>الجاهز</span><b id="s_ready">0</b></div><div class="metric"><span>السعر</span><b id="s_price">0</b></div><div class="metric"><span>الإجمالي</span><b id="s_total">0</b></div></div><div class="field"><label>الكمية</label><input id="s_qty" type="number" min="0" value="0" oninput="invoiceLive()"></div><div id="s_warn" class="red"></div><div class="field"><label>طريقة الدفع</label><select id="s_pay"><option>كاش</option><option>آجل</option></select></div><button style="width:100%" onclick="saveSale()">حفظ الفاتورة</button>`);invoiceLive()}
+function invoiceLive(){let o=s_model.options[s_model.selectedIndex];let ready=+(o?.dataset.ready||0),price=+(o?.dataset.price||0),q=+s_qty.value||0;s_ready.textContent=ready;s_price.textContent=money(price);s_total.textContent=money(q*price);s_warn.textContent=q>ready?'⚠️ الكمية أكبر من الجاهز المتاح':''}
+function saveSale(){let x=db.models.find(z=>z.id==s_model.value),q=+s_qty.value||0;if(!x||q<=0)return alert('اختر موديل وأدخل الكمية');if(q>x.ready)return alert('لا يمكن بيع أكثر من الجاهز');let total=q*(+s_price.textContent.replace(/[^\d]/g,'')||x.price);x.ready-=q;x.sold+=q;db.sales.push({id:Date.now(),customerId:+s_customer.value,modelId:x.id,qty:q,total:q*x.price,pay:s_pay.value});save();closeModal();toast('تم حفظ الفاتورة');render()}
+function ret(){let ms=db.models.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join(''),cs=db.customers.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('');modal('↩️ مرتجع',`<div class="field"><label>العميل</label><select id="r_customer">${cs}</select></div><div class="field"><label>الموديل</label><select id="r_model">${ms}</select></div><div class="field"><label>الكمية</label><input id="r_qty" type="number" min="1"></div><button style="width:100%" onclick="saveReturn()">حفظ المرتجع</button>`)}
+function saveReturn(){let x=db.models.find(z=>z.id==r_model.value),q=+r_qty.value||0;if(!x||q<=0)return alert('أدخل البيانات');x.ready+=q;x.returned+=q;db.returns.push({id:Date.now(),customerId:+r_customer.value,modelId:x.id,qty:q});save();closeModal();toast('تم تسجيل المرتجع وإعادته للجاهز');render()}
+function expense(){modal('💸 مصروف',`<div class="field"><label>التصنيف</label><input id="e_cat" placeholder="كهرباء / إيجار / صيانة"></div><div class="field"><label>المبلغ</label><input id="e_amt" type="number" min="0"></div><div class="field"><label>ملاحظة</label><input id="e_note"></div><button style="width:100%" onclick="saveExpense()">حفظ</button>`)}
+function saveExpense(){db.expenses.push({id:Date.now(),category:e_cat.value,amount:+e_amt.value||0,note:e_note.value});save();closeModal();toast('تم تسجيل المصروف');render()}
+function requestAdd(){let cs=db.customers.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join(''),ms=db.models.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('');modal('📋 طلب عميل',`<div class="field"><label>العميل</label><div class="inlineadd"><div><select id="q_customer">${cs}</select></div><button class="secondary" onclick="closeModal();add('customer')">+ عميل</button></div></div><div class="field"><label>الموديل</label><select id="q_model">${ms}</select></div><div class="field"><label>الكمية المطلوبة</label><input id="q_qty" type="number" min="1"></div><button style="width:100%" onclick="saveRequest()">حفظ الطلب</button>`)}
+function saveRequest(){let x=db.models.find(z=>z.id==q_model.value),q=+q_qty.value||0;if(!x||q<=0)return alert('أدخل البيانات');x.required+=q;db.requests.push({id:Date.now(),customerId:+q_customer.value,modelId:x.id,qty:q});save();closeModal();toast('تم تسجيل الطلب');render()}
+function resetDemo(){if(confirm('تصفير كل بيانات النسخة؟')){db=structuredClone(blank);save();render();toast('تم التصفير')}}
+show('home')
+</script>
+
+<script>
+/* V8 practical fixes: keep original UI, fix data flow */
+db.supplierPayments=db.supplierPayments||[];
+
+const _renderOriginal=render;
+render=function(){
+  let m=document.getElementById('main');
+  if(page==='purchasesHistory') return purchasesHistory(m);
+  _renderOriginal();
+};
+
+function purchasesHistory(m){
+  m.innerHTML=`<div class="section"><button class="back secondary small" onclick="show('more')">رجوع</button><h2>🧾 سجل المشتريات</h2></div>
+  ${db.purchases.slice().reverse().map(p=>{
+    let mat=db.materials.find(x=>x.id===p.materialId), sup=db.suppliers.find(x=>x.id===p.supplierId);
+    let d=p.date?new Date(p.date).toLocaleDateString('ar-EG'):'—';
+    return `<div class="card"><div class="split"><div><div class="title">${esc(mat?.name||'خامة غير موجودة')}${mat?.color?' — '+esc(mat.color):''}</div><div class="muted">المورد: ${esc(sup?.name||'غير محدد')} · ${d}</div><div class="muted">الكمية: ${p.qty} ${esc(mat?.unit||'')}</div></div><b>${money(p.total)}</b></div></div>`
+  }).join('')||'<div class="card empty">لا توجد مشتريات مسجلة</div>'}`;
+}
+
+function accounts(m){
+  let salesTotal=db.sales.reduce((a,x)=>a+(+x.total||0),0);
+  let collections=db.payments.reduce((a,x)=>a+(+x.amount||0),0);
+  let purchases=db.purchases.reduce((a,x)=>a+(+x.total||0),0);
+  let supplierPaid=db.supplierPayments.reduce((a,x)=>a+(+x.amount||0),0);
+  let expensesTotal=db.expenses.reduce((a,x)=>a+(+x.amount||0),0);
+  m.innerHTML=`<div class="section"><h2>💰 الحسابات</h2></div>
+  <div class="grid"><div class="card metric"><span>ليا — العملاء</span><b>${money(salesTotal-collections)}</b></div>
+  <div class="card metric"><span>عليا — الموردين</span><b>${money(purchases-supplierPaid)}</b></div></div>
+  <div class="grid"><div class="card metric"><span>المبيعات</span><b>${money(salesTotal)}</b></div>
+  <div class="card metric"><span>التحصيل</span><b>${money(collections)}</b></div></div>
+  <div class="grid"><div class="card metric"><span>المشتريات</span><b>${money(purchases)}</b></div>
+  <div class="card metric"><span>المصروفات</span><b>${money(expensesTotal)}</b></div></div>
+  <div class="card"><button style="width:100%" onclick="show('purchasesHistory')">🧾 عرض سجل المشتريات</button></div>`;
+}
+
+function suppliers(m){
+  m.innerHTML=`<div class="section"><h2>🚚 الموردين</h2><button onclick="add('supplier')" class="small">+ إضافة مورد</button></div>
+  ${db.suppliers.map(s=>{
+    let bought=db.purchases.filter(p=>p.supplierId===s.id).reduce((a,p)=>a+(+p.total||0),0);
+    let paid=db.supplierPayments.filter(p=>p.supplierId===s.id).reduce((a,p)=>a+(+p.amount||0),0);
+    return `<div class="card"><div class="split"><div><div class="title">${esc(s.name)}</div><div class="muted">مشتريات ${money(bought)} — مدفوع ${money(paid)}</div></div><b>${money(bought-paid)}</b></div><div class="actions"><button class="small" onclick="supplierPay(${s.id})">+ دفعة</button></div></div>`
+  }).join('')||'<div class="card empty">أضف أول مورد</div>'}`;
+}
+function supplierPay(id){modal('💵 دفعة مورد',`<div class="field"><label>المبلغ</label><input id="sp_amt" type="number" min="0"></div><button style="width:100%" onclick="saveSupplierPay(${id})">حفظ الدفعة</button>`)}
+function saveSupplierPay(id){let a=+sp_amt.value||0;if(a<=0)return alert('اكتب المبلغ');db.supplierPayments.push({id:Date.now(),supplierId:id,amount:a,date:new Date().toISOString()});save();closeModal();toast('تم تسجيل دفعة المورد');render()}
+
+function purchase(){
+  let matOpts=db.materials.map(x=>`<option value="${x.id}">${esc(x.name)} ${x.color?'— '+esc(x.color):''}</option>`).join('');
+  let supOpts=db.suppliers.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('');
+  modal('شراء خامة',`
+  <div class="field"><label>الصنف</label><div class="inlineadd"><div><select id="p_mat">${matOpts}</select></div><button class="secondary" onclick="quickAdd('material')">+ خامة</button></div></div>
+  <div class="formrow"><div class="field"><label>الكمية</label><input id="p_qty" type="number" min="0"></div><div class="field"><label>إجمالي الشراء</label><input id="p_total" type="number" min="0"></div></div>
+  <div class="field"><label>المورد</label><div class="inlineadd"><div><select id="p_sup">${supOpts}</select></div><button class="secondary" onclick="quickAdd('supplier')">+ مورد</button></div></div>
+  <button style="width:100%" onclick="savePurchase()">حفظ</button>
+  <div style="margin-top:8px"><button class="secondary" style="width:100%" onclick="closeModal();show('purchasesHistory')">🧾 سجل المشتريات</button></div>`);
+}
+function quickAdd(type){
+  modal(type==='material'?'إضافة خامة':'إضافة مورد أثناء الشراء',
+  type==='material'
+  ? `<div class="field"><label>اسم الخامة</label><input id="qa_name"></div><div class="formrow"><div class="field"><label>النوع</label><select id="qa_kind"><option>قماش</option><option>إكسسوار</option></select></div><div class="field"><label>الوحدة</label><select id="qa_unit"><option>متر</option><option>قطعة</option></select></div></div><div class="field"><label>اللون</label><input id="qa_color"></div><button style="width:100%" onclick="saveQuick('material')">حفظ والرجوع للشراء</button>`
+  : `<div class="field"><label>اسم المورد</label><input id="qa_name"></div><div class="field"><label>الهاتف</label><input id="qa_phone"></div><button style="width:100%" onclick="saveQuick('supplier')">حفظ والرجوع للشراء</button>`);
+}
+function saveQuick(type){
+  let name=qa_name.value.trim();if(!name)return alert('اكتب الاسم');
+  if(type==='material') db.materials.push({id:Date.now(),name,kind:qa_kind.value,unit:qa_unit.value,color:qa_color.value,threshold:0,stock:0});
+  else db.suppliers.push({id:Date.now(),name,phone:qa_phone.value});
+  save();closeModal();purchase();toast('تمت الإضافة ويمكن اختيارها الآن');
+}
+
+function modelDetail(m){
+ let x=db.models.find(z=>z.id===activeModel);if(!x){show('models');return}
+ m.innerHTML=`<div class="section"><button class="back secondary small" onclick="show('models')">رجوع</button><h2>${esc(x.name)}</h2></div>
+ <div class="card"><div class="grid3"><div class="metric"><span>🛠️ تجهيز</span><b>${x.inProgress}</b></div><div class="metric"><span>📦 جاهز</span><b>${x.ready}</b></div><div class="metric"><span>📋 مطلوب</span><b>${x.required}</b></div></div></div>
+ <div class="card"><div class="title">سعر البيع الرسمي</div><div class="big">${money(x.price)}</div><div class="actions"><button onclick="cutStart(${x.id})">✂️ ابدأ قصّة</button><button class="secondary" onclick="production(${x.id})">🏭 تسجيل إنتاج</button></div></div>
+ <div class="card"><div class="title">🧵 خامات وإكسسوارات الموديل</div>
+ <div class="muted">أضف أكثر من خامة، وكل خامة لها استهلاك مستقل.</div>
+ <div class="inlineadd" style="margin-top:8px"><div><select id="recipeMat">${db.materials.map(z=>`<option value="${z.id}">${esc(z.name)} ${z.color?'— '+esc(z.color):''}</option>`).join('')}</select></div>
+ <div style="max-width:120px"><input id="recipeQty" type="number" min="0" step="0.01" placeholder="الاستهلاك"></div><button onclick="recipeAdd(${x.id})">+ إضافة</button></div>
+ ${x.recipe.map(r=>{let z=db.materials.find(q=>q.id===r.materialId);return `<div class="item"><span>${esc(z?.name||'خامة')} ${z?.color?'— '+esc(z.color):''}</span><b>${r.qty} ${esc(z?.unit||'')} / قطعة</b></div>`}).join('')||'<div class="empty">لم تتم إضافة خامات للموديل بعد</div>'}
+ </div><div class="card"><div class="title">📝 ملاحظات</div><div class="muted">${esc(x.note||'لا توجد ملاحظات')}</div></div>`;
+}
+function recipeAdd(id){
+ let x=db.models.find(z=>z.id===id),mid=+recipeMat.value,q=+recipeQty.value||0;
+ if(!mid||q<=0)return alert('اختر الخامة واكتب استهلاك القطعة');
+ let old=x.recipe.find(r=>r.materialId===mid);if(old)old.qty=q;else x.recipe.push({materialId:mid,qty:q});
+ save();toast('تم ربط الخامة بالموديل');
+}
+
+
+/* V10 production-state compatibility layer
+   Business rule:
+   - Start cut: actual fabric quantity enters bank and leaves warehouse.
+   - Finish cut: actual pieces produced from that fabric are recorded.
+   - Finished cut becomes "جاري التجهيز".
+   - Production is recorded separately; only completed pieces become "جاهز للتوزيع".
+   - Partial production is allowed.
+*/
+(function () {
+  function num(v) {
+    var n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  window.M10 = window.M10 || {};
+
+  M10.normalizeCut = function (cut) {
+    if (!cut) return cut;
+    cut.fabricIn = num(cut.fabricIn ?? cut.meters ?? cut.qtyMeters ?? cut.quantity);
+    cut.piecesProduced = num(cut.piecesProduced ?? cut.pieces ?? cut.outputPieces ?? 0);
+    cut.piecesReady = num(cut.piecesReady ?? cut.readyPieces ?? 0);
+    cut.piecesInProgress = Math.max(0, cut.piecesProduced - cut.piecesReady);
+    cut.status = cut.status || (cut.piecesProduced > 0 ? "جاري التجهيز" : "جديدة");
+    return cut;
+  };
+
+  M10.normalizeAllCuts = function (cuts) {
+    return Array.isArray(cuts) ? cuts.map(M10.normalizeCut) : cuts;
+  };
+
+  M10.productionProgress = function (cut, completed) {
+    cut = M10.normalizeCut(cut);
+    completed = Math.max(0, Math.min(num(completed), cut.piecesInProgress));
+    cut.piecesReady += completed;
+    cut.piecesInProgress = cut.piecesProduced - cut.piecesReady;
+    cut.status = cut.piecesInProgress > 0 ? "جاري التجهيز" : "جاهز للتوزيع";
+    return cut;
+  };
+
+  M10.actualMetersPerPiece = function (cut) {
+    cut = M10.normalizeCut(cut);
+    return cut.piecesProduced > 0 ? cut.fabricIn / cut.piecesProduced : 0;
+  };
+})();
+
+</script>
+
+<script>
+/* V12 — Factory core flow
+   Purchase -> warehouse
+   Start cut -> actual fabric leaves warehouse
+   Finish cut -> actual pieces -> جاري التجهيز
+   Production -> partial allowed -> جاهز للتوزيع
+   Invoice -> receivable; customer payments are separate
+*/
+(function(){
+  db.purchases = Array.isArray(db.purchases) ? db.purchases : [];
+  db.payments = Array.isArray(db.payments) ? db.payments : [];
+  db.supplierPayments = Array.isArray(db.supplierPayments) ? db.supplierPayments : [];
+  db.cuts = Array.isArray(db.cuts) ? db.cuts : [];
+  db.expenses = Array.isArray(db.expenses) ? db.expenses : [];
+  db.sales = Array.isArray(db.sales) ? db.sales : [];
+  db.returns = Array.isArray(db.returns) ? db.returns : [];
+
+  function n(v){var x=Number(v);return Number.isFinite(x)?x:0;}
+  db.materials.forEach(function(m){m.stock=n(m.stock);});
+  db.models.forEach(function(m){
+    m.inProgress=n(m.inProgress);m.ready=n(m.ready);m.produced=n(m.produced);
+    m.sold=n(m.sold);m.returned=n(m.returned);m.required=n(m.required);
+    m.recipe=Array.isArray(m.recipe)?m.recipe:[];
+  });
+  db.cuts.forEach(function(c){
+    c.fabricQty=n(c.fabricQty ?? c.fabricIn ?? c.meters ?? 0);
+    c.pieces=n(c.pieces);
+    c.piecesProduced=n(c.piecesProduced ?? c.pieces);
+    c.piecesReady=n(c.piecesReady);
+    c.piecesInProgress=Math.max(0,c.piecesProduced-c.piecesReady);
+    if(c.piecesProduced>0 && c.status==='جاري التجهيز القص') c.status='جاري التجهيز';
+  });
+
+  function activeCuts(modelId){
+    return db.cuts.filter(function(c){
+      return Number(c.modelId)===Number(modelId) &&
+             c.status==='جاري التجهيز' && n(c.piecesInProgress)>0;
+    });
+  }
+
+  window.purchase=function(){
+    var matOpts=db.materials.map(function(x){
+      return '<option value="'+x.id+'">'+esc(x.name)+' '+(x.color?'— '+esc(x.color):'')+
+             ' — المخزون '+n(x.stock)+' '+esc(x.unit)+'</option>';
+    }).join('');
+    var supOpts=db.suppliers.map(function(x){
+      return '<option value="'+x.id+'">'+esc(x.name)+'</option>';
+    }).join('');
+    modal('🛒 شراء خامة',
+      '<div class="field"><label>الصنف</label><div class="inlineadd"><div><select id="p_mat">'+matOpts+
+      '</select></div><button class="secondary" onclick="quickAdd(\'material\')">+ خامة</button></div></div>'+
+      '<div class="formrow"><div class="field"><label>الكمية</label><input id="p_qty" type="number" min="0" step="0.01"></div>'+
+      '<div class="field"><label>إجمالي الشراء</label><input id="p_total" type="number" min="0" step="0.01"></div></div>'+
+      '<div class="field"><label>المورد</label><div class="inlineadd"><div><select id="p_sup">'+supOpts+
+      '</select></div><button class="secondary" onclick="quickAdd(\'supplier\')">+ مورد</button></div></div>'+
+      '<button style="width:100%" onclick="savePurchase()">حفظ الشراء</button>'+
+      '<div style="margin-top:8px"><button class="secondary" style="width:100%" onclick="closeModal();show(\'purchasesHistory\')">🧾 سجل المشتريات</button></div>'
+    );
+  };
+
+  window.savePurchase=function(){
+    var matId=n(document.getElementById('p_mat')?.value);
+    var supId=n(document.getElementById('p_sup')?.value)||null;
+    var mat=db.materials.find(function(x){return Number(x.id)===matId;});
+    var qty=n(document.getElementById('p_qty')?.value);
+    var total=n(document.getElementById('p_total')?.value);
+    if(!mat||qty<=0)return alert('اختر خامة وأدخل الكمية');
+
+    mat.stock=n(mat.stock)+qty;
+    db.purchases.push({id:Date.now(),materialId:mat.id,qty:qty,total:total,supplierId:supId,date:new Date().toISOString()});
+    save();closeModal();toast('تم الشراء — المخزون زاد '+qty+' '+(mat.unit||''));render();
+  };
+
+  window.cutStart=function(modelId){
+    var models=db.models.map(function(x){
+      return '<option value="'+x.id+'" '+(x.id===modelId?'selected':'')+'>'+esc(x.name)+'</option>';
+    }).join('');
+    var fabrics=db.materials.filter(function(x){return x.kind==='قماش';}).map(function(x){
+      return '<option value="'+x.id+'">'+esc(x.name)+' '+(x.color?'— '+esc(x.color):'')+
+             ' — المتاح '+n(x.stock)+' '+esc(x.unit)+'</option>';
+    }).join('');
+    if(!fabrics)return alert('مفيش خامة قماش في المخزن. سجّل شراء القماش الأول.');
+    modal('✂️ ابدأ قصّة',
+      '<div class="field"><label>الموديل</label><select id="c_model">'+models+'</select></div>'+
+      '<div class="field"><label>القماش الداخل للبنك</label><select id="c_mat">'+fabrics+'</select></div>'+
+      '<div class="field"><label>كمية القماش الفعلية الداخلة للبنك</label><input id="c_fabric" type="number" min="0.01" step="0.01" placeholder="مثال: 500"></div>'+
+      '<div id="c_stock_warn" class="red"></div>'+
+      '<div class="field"><label>ملاحظة</label><input id="c_note"></div>'+
+      '<button style="width:100%" onclick="saveCut()">✂️ تسجيل بداية القص</button>'
+    );
+    setTimeout(function(){
+      var f=document.getElementById('c_fabric'),m=document.getElementById('c_mat');
+      function warn(){
+        var mat=db.materials.find(function(x){return Number(x.id)===Number(m?.value);});
+        var el=document.getElementById('c_stock_warn');
+        if(el)el.textContent=mat&&n(f?.value)>n(mat.stock)?'⚠️ الكمية أكبر من المتاح في المخزن':'';
+      }
+      f?.addEventListener('input',warn);m?.addEventListener('change',warn);
+    },0);
+  };
+
+  window.saveCut=function(){
+    var x=db.models.find(function(z){return Number(z.id)===Number(document.getElementById('c_model')?.value);});
+    var mat=db.materials.find(function(z){return Number(z.id)===Number(document.getElementById('c_mat')?.value);});
+    var q=n(document.getElementById('c_fabric')?.value);
+    if(!x||!mat||q<=0)return alert('اختر الموديل والخامة وأدخل كمية القماش');
+    if(q>n(mat.stock))return alert('الكمية أكبر من المخزون — لازم القماش يكون موجود الأول');
+    mat.stock=n(mat.stock)-q;
+    db.cuts.push({
+      id:Date.now(),modelId:x.id,materialId:mat.id,fabricQty:q,
+      start:new Date().toISOString(),end:null,note:document.getElementById('c_note')?.value||'',
+      pieces:0,piecesProduced:0,piecesReady:0,piecesInProgress:0,status:'جاري القص'
+    });
+    save();closeModal();toast('بدأت القصّة — تم خصم '+q+' '+(mat.unit||'متر')+' من المخزن');render();
+  };
+
+  window.cutFinish=function(cutId){
+    var c=db.cuts.find(function(x){return Number(x.id)===Number(cutId);});
+    if(!c)return;
+    modal('✅ إنهاء القصّة',
+      '<div class="card"><div class="title">القماش الداخل للبنك</div><div class="big">'+n(c.fabricQty)+' متر</div></div>'+
+      '<div class="field"><label>عدد القطع الفعلي اللي طلعت من البنك</label><input id="finish_pieces" type="number" min="1" step="1" placeholder="مثال: 190"></div>'+
+      '<div class="muted">الناتج هنا فعلي، ومش بنفترض عدد القطع من قبل.</div>'+
+      '<button style="width:100%;margin-top:10px" onclick="saveCutFinish('+c.id+')">إنهاء القصّة</button>'
+    );
+  };
+
+  window.saveCutFinish=function(cutId){
+    var c=db.cuts.find(function(x){return Number(x.id)===Number(cutId);});
+    var pieces=Math.floor(n(document.getElementById('finish_pieces')?.value));
+    if(!c||pieces<=0)return alert('أدخل عدد القطع الفعلي');
+    c.pieces=pieces;c.piecesProduced=pieces;c.piecesReady=0;c.piecesInProgress=pieces;
+    c.end=new Date().toISOString();c.actualMetersPerPiece=c.fabricQty/pieces;c.status='جاري التجهيز';
+    var x=db.models.find(function(z){return Number(z.id)===Number(c.modelId);});
+    if(x){x.inProgress=n(x.inProgress)+pieces;x.produced=n(x.produced)+pieces;}
+    save();closeModal();toast('انتهت القصّة — '+pieces+' قطعة دخلت جاري التجهيز');render();
+  };
+
+  window.production=function(modelId){
+    var x=db.models.find(function(z){return Number(z.id)===Number(modelId);});
+    if(!x)return;
+    var cuts=activeCuts(modelId);
+    if(!cuts.length)return alert('مفيش كمية جاري تجهيزها لهذا الموديل');
+    var opts=cuts.map(function(c){
+      return '<option value="'+c.id+'">قصّة '+c.id+' — '+n(c.piecesInProgress)+' قطعة</option>';
+    }).join('');
+    modal('🏭 تسجيل إنتاج',
+      '<div class="field"><label>القصّة</label><select id="prod_cut">'+opts+'</select></div>'+
+      '<div class="field"><label>عدد القطع التي خلصت فعليًا</label><input id="prod_qty" type="number" min="1" step="1"></div>'+
+      '<div class="muted">الإنتاج على دفعات مسموح. المتبقي يظل جاري تجهيز.</div>'+
+      '<button style="width:100%;margin-top:10px" onclick="saveProduction('+modelId+')">تسجيل الإنتاج</button>'
+    );
+  };
+
+  window.saveProduction=function(modelId){
+    var x=db.models.find(function(z){return Number(z.id)===Number(modelId);});
+    var c=db.cuts.find(function(z){return Number(z.id)===Number(document.getElementById('prod_cut')?.value);});
+    var q=Math.floor(n(document.getElementById('prod_qty')?.value));
+    if(!x||!c||q<=0)return alert('أدخل كمية الإنتاج');
+    var available=n(c.piecesInProgress);
+    if(q>available)return alert('الكمية أكبر من الجاري تجهيزها في القصّة');
+    c.piecesReady=n(c.piecesReady)+q;c.piecesInProgress=available-q;
+    c.status=c.piecesInProgress>0?'جاري التجهيز':'مكتملة';c.productionLastDate=new Date().toISOString();
+    x.inProgress=Math.max(0,n(x.inProgress)-q);x.ready=n(x.ready)+q;
+    save();closeModal();toast('تم نقل '+q+' قطعة من جاري التجهيز إلى الجاهز');render();
+  };
+
+  window.customerDetail=function(id){
+    var c=db.customers.find(function(z){return Number(z.id)===Number(id);});
+    if(!c){show('customers');return;}
+    var sales=db.sales.filter(function(s){return Number(s.customerId)===Number(id);});
+    var pays=db.payments.filter(function(p){return Number(p.customerId)===Number(id);});
+    var sold=sales.reduce(function(a,s){return a+n(s.total);},0);
+    var paid=pays.reduce(function(a,p){return a+n(p.amount);},0);
+    var balance=sold-paid;
+    var inv=sales.slice().reverse().map(function(s){
+      var mo=db.models.find(function(z){return Number(z.id)===Number(s.modelId);});
+      return '<div class="item"><div><b>فاتورة #'+s.id+'</b><div class="muted">'+esc(mo?.name||'موديل')+' — '+n(s.qty)+' قطعة</div></div><b>'+money(s.total)+'</b></div>';
+    }).join('')||'<div class="empty">لا توجد فواتير</div>';
+    var ph=pays.slice().reverse().map(function(p){
+      return '<div class="item"><div><b>دفعة</b><div class="muted">'+new Date(p.date||Date.now()).toLocaleDateString('ar-EG')+'</div></div><b class="green">+'+money(p.amount)+'</b></div>';
+    }).join('')||'<div class="empty">لا توجد دفعات</div>';
+    var m=document.getElementById('main');
+    m.innerHTML='<div class="section"><button class="back secondary small" onclick="show(\'customers\')">رجوع</button><h2>'+esc(c.name)+'</h2></div>'+
+      '<div class="card"><div class="grid3"><div class="metric"><span>ليا</span><b>'+money(balance)+'</b></div><div class="metric"><span>المبيعات</span><b>'+money(sold)+'</b></div><div class="metric"><span>الدفعات</span><b>'+money(paid)+'</b></div></div>'+
+      '<div class="actions"><button onclick="customerPay('+c.id+')">💵 تسجيل دفعة</button></div></div>'+
+      '<div class="card"><div class="title">🧾 الفواتير</div>'+inv+'</div>'+
+      '<div class="card"><div class="title">💵 دفعات العملاء</div>'+ph+'</div>';
+  };
+
+  window.customerPay=function(id){
+    var c=db.customers.find(function(z){return Number(z.id)===Number(id);});
+    if(!c)return;
+    var sold=db.sales.filter(function(s){return Number(s.customerId)===Number(id);}).reduce(function(a,s){return a+n(s.total);},0);
+    var paid=db.payments.filter(function(p){return Number(p.customerId)===Number(id);}).reduce(function(a,p){return a+n(p.amount);},0);
+    modal('💵 دفعة عميل — '+esc(c.name),
+      '<div class="card"><div class="muted">الرصيد الحالي (ليا)</div><div class="big">'+money(sold-paid)+'</div></div>'+
+      '<div class="field"><label>مبلغ الدفعة</label><input id="cp_amt" type="number" min="0.01" step="0.01"></div>'+
+      '<button style="width:100%" onclick="saveCustomerPayment('+id+')">حفظ الدفعة</button>'
+    );
+  };
+
+  window.saveCustomerPayment=function(id){
+    var amount=n(document.getElementById('cp_amt')?.value);
+    if(amount<=0)return alert('اكتب مبلغ الدفعة');
+    var sold=db.sales.filter(function(s){return Number(s.customerId)===Number(id);}).reduce(function(a,s){return a+n(s.total);},0);
+    var paid=db.payments.filter(function(p){return Number(p.customerId)===Number(id);}).reduce(function(a,p){return a+n(p.amount);},0);
+    var balance=sold-paid;
+    if(amount>balance)return alert('الدفعة أكبر من الرصيد المستحق');
+    db.payments.push({id:Date.now(),customerId:Number(id),amount:amount,date:new Date().toISOString()});
+    save();closeModal();toast('تم تسجيل دفعة العميل');customerDetail(id);
+  };
+
+  window.customers=function(m){
+    m.innerHTML='<div class="section"><h2>👥 العملاء</h2><button onclick="add(\'customer\')" class="small">+ إضافة عميل</button></div>'+
+      (db.customers.map(function(c){
+        var sold=db.sales.filter(function(s){return Number(s.customerId)===Number(c.id);}).reduce(function(a,s){return a+n(s.total);},0);
+        var paid=db.payments.filter(function(p){return Number(p.customerId)===Number(c.id);}).reduce(function(a,p){return a+n(p.amount);},0);
+        return '<div class="card" onclick="customerDetail('+c.id+')"><div class="split"><div class="title">'+esc(c.name)+'</div><b>'+money(sold-paid)+'</b></div>'+
+          '<div class="muted">مبيعات '+money(sold)+' — دفعات '+money(paid)+'</div>'+
+          '<div class="actions"><button class="secondary small" onclick="event.stopPropagation();customerPay('+c.id+')">+ دفعة</button></div></div>';
+      }).join('')||'<div class="card empty">أضف أول عميل</div>');
+  };
+
+  window.sale=function(){
+    var cs=db.customers.map(function(x){return '<option value="'+x.id+'">'+esc(x.name)+'</option>';}).join('');
+    var ms=db.models.map(function(x){return '<option value="'+x.id+'" data-ready="'+n(x.ready)+'" data-price="'+n(x.price)+'">'+esc(x.name)+'</option>';}).join('');
+    modal('🧾 فاتورة',
+      '<div class="field"><label>العميل</label><div class="inlineadd"><div><select id="s_customer">'+cs+'</select></div><button class="secondary" onclick="closeModal();add(\'customer\')">+ عميل</button></div></div>'+
+      '<div class="field"><label>الموديل</label><select id="s_model" onchange="invoiceLive()">'+ms+'</select></div>'+
+      '<div class="grid3"><div class="metric"><span>الجاهز</span><b id="s_ready">0</b></div><div class="metric"><span>السعر</span><b id="s_price">0</b></div><div class="metric"><span>الإجمالي</span><b id="s_total">0</b></div></div>'+
+      '<div class="field"><label>الكمية</label><input id="s_qty" type="number" min="1" value="1" oninput="invoiceLive()"></div>'+
+      '<div id="s_warn" class="red"></div><button style="width:100%" onclick="saveSale()">حفظ الفاتورة</button>'
+    );
+    invoiceLive();
+  };
+
+  window.saveSale=function(){
+    var x=db.models.find(function(z){return Number(z.id)===Number(document.getElementById('s_model')?.value);});
+    var q=Math.floor(n(document.getElementById('s_qty')?.value));
+    var customerId=n(document.getElementById('s_customer')?.value);
+    if(!x||!customerId||q<=0)return alert('اختر العميل والموديل والكمية');
+    if(q>x.ready)return alert('لا يمكن بيع أكثر من الجاهز');
+    var total=q*n(x.price);
+    x.ready-=q;x.sold=n(x.sold)+q;
+    db.sales.push({id:Date.now(),customerId:customerId,modelId:x.id,qty:q,total:total,date:new Date().toISOString()});
+    save();closeModal();toast('تم حفظ الفاتورة — المبلغ ظهر على العميل كـ ليا');render();
+  };
+
+  window.accounts=function(m){
+    var salesTotal=db.sales.reduce(function(a,x){return a+n(x.total);},0);
+    var collections=db.payments.reduce(function(a,x){return a+n(x.amount);},0);
+    var purchases=db.purchases.reduce(function(a,x){return a+n(x.total);},0);
+    var supplierPaid=db.supplierPayments.reduce(function(a,x){return a+n(x.amount);},0);
+    var expensesTotal=db.expenses.reduce(function(a,x){return a+n(x.amount);},0);
+    m.innerHTML='<div class="section"><h2>💰 الحسابات</h2></div>'+
+      '<div class="grid"><div class="card metric"><span>ليا — العملاء</span><b>'+money(salesTotal-collections)+'</b></div>'+
+      '<div class="card metric"><span>عليا — الموردين</span><b>'+money(purchases-supplierPaid)+'</b></div></div>'+
+      '<div class="grid"><div class="card metric"><span>المبيعات</span><b>'+money(salesTotal)+'</b></div>'+
+      '<div class="card metric"><span>التحصيل</span><b>'+money(collections)+'</b></div></div>'+
+      '<div class="grid"><div class="card metric"><span>المشتريات</span><b>'+money(purchases)+'</b></div>'+
+      '<div class="card metric"><span>مصروفات المصنع</span><b>'+money(expensesTotal)+'</b></div></div>'+
+      '<div class="card"><button style="width:100%" onclick="show(\'purchasesHistory\')">🧾 سجل المشتريات</button></div>';
+  };
+
+  window.modelDetail=function(m){
+    var x=db.models.find(function(z){return Number(z.id)===Number(activeModel);});
+    if(!x){show('models');return;}
+    var cuts=db.cuts.filter(function(c){return Number(c.modelId)===Number(x.id);}).slice().reverse();
+    var cutHtml=cuts.map(function(c){
+      var mat=db.materials.find(function(z){return Number(z.id)===Number(c.materialId);});
+      var inProg=n(c.piecesInProgress),produced=n(c.piecesProduced);
+      var action='';
+      if(c.status==='جاري القص') action='<button class="small" onclick="cutFinish('+c.id+')">إنهاء القصّة</button>';
+      else if(c.status==='جاري التجهيز'&&inProg>0) action='<button class="secondary small" onclick="production('+x.id+')">تسجيل إنتاج</button>';
+      return '<div class="card"><div class="split"><div><b>قصّة #'+c.id+'</b><div class="muted">'+esc(mat?.name||'خامة')+' — '+n(c.fabricQty)+' متر</div></div><span class="tag">'+esc(c.status||'—')+'</span></div>'+
+        '<div class="muted" style="margin-top:7px">الناتج الفعلي: '+produced+' قطعة'+
+        (produced?' — استهلاك فعلي '+n(c.actualMetersPerPiece||0).toFixed(2)+' متر/قطعة':'')+
+        ' — جاري تجهيز: '+inProg+' — جاهز من القصّة: '+n(c.piecesReady)+'</div>'+
+        '<div class="actions">'+action+'</div></div>';
+    }).join('')||'<div class="empty">لا توجد قصّات</div>';
+
+    m.innerHTML='<div class="section"><button class="back secondary small" onclick="show(\'models\')">رجوع</button><h2>'+esc(x.name)+'</h2></div>'+
+      '<div class="card"><div class="grid3"><div class="metric"><span>🛠️ جاري التجهيز</span><b>'+n(x.inProgress)+'</b></div><div class="metric"><span>📦 جاهز</span><b>'+n(x.ready)+'</b></div><div class="metric"><span>📋 مطلوب</span><b>'+n(x.required)+'</b></div></div></div>'+
+      '<div class="card"><div class="title">سعر البيع الرسمي</div><div class="big">'+money(x.price)+'</div><div class="actions"><button onclick="cutStart('+x.id+')">✂️ ابدأ قصّة</button><button class="secondary" onclick="production('+x.id+')">🏭 تسجيل إنتاج</button></div></div>'+
+      '<div class="section"><h2>✂️ دورة القص والإنتاج</h2></div>'+cutHtml;
+  };
+
+  // Keep old in-progress quantities usable after the new cut lifecycle.
+  db.models.forEach(function(x){
+    if(n(x.inProgress)<=0)return;
+    if(!activeCuts(x.id)){
+      db.cuts.push({id:Date.now()+Math.floor(Math.random()*100000),modelId:x.id,materialId:null,
+        fabricQty:0,start:null,end:null,pieces:n(x.inProgress),piecesProduced:n(x.inProgress),
+        piecesReady:0,piecesInProgress:n(x.inProgress),status:'جاري التجهيز',legacy:true});
+    }
+  });
+
+  save();
+})();
+</script>
+
+
+<script>
+/* V13 — narrow touch, preserving the V12 UI.
+   Rules:
+   1) Official model price is visible/editable on the model page.
+   2) If no official price exists, invoice asks for the sale price and continues.
+   3) Invoice = sale/receivable only. Customer payment is always a separate transaction.
+   4) Purchase = inventory + supplier payable; NOT factory operating expense.
+   5) Purchase requires a supplier and a real purchase total.
+   6) Customer demand decreases when a sale is actually invoiced.
+   7) Supplier/customer payment cannot exceed the currently outstanding balance.
+*/
+(function(){
+  function N(v){var x=Number(v);return Number.isFinite(x)?x:0;}
+  function fmtPrice(v){return N(v)>0 ? money(v) : 'غير محدد';}
+
+  window.editModelPrice=function(id){
+    var x=db.models.find(function(z){return Number(z.id)===Number(id);});
+    if(!x)return;
+    modal('💰 سعر البيع الرسمي',
+      '<div class="card"><div class="muted">السعر الحالي</div><div class="big">'+fmtPrice(x.price)+'</div></div>'+
+      '<div class="field"><label>السعر الرسمي للقطعة</label><input id="mp_price" type="number" min="0.01" step="0.01" value="'+(N(x.price)>0?N(x.price):'')+'" placeholder="مثال: 120"></div>'+
+      '<button style="width:100%" onclick="saveModelPrice('+id+')">حفظ السعر الرسمي</button>');
+  };
+
+  window.saveModelPrice=function(id){
+    var x=db.models.find(function(z){return Number(z.id)===Number(id);});
+    var p=N(document.getElementById('mp_price')?.value);
+    if(!x||p<=0)return alert('اكتب سعرًا صحيحًا');
+    x.price=p;
+    save();closeModal();toast('تم تحديث السعر الرسمي للموديل');render();
+  };
+
+  window.models=function(m){
+    m.innerHTML='<div class="section"><h2>👗 الموديلات</h2><button onclick="add(\'model\')" class="small">+ إضافة موديل</button></div>'+
+      (db.models.map(function(x){
+        return '<div class="card" onclick="openModel('+x.id+')"><div class="split">'+
+          '<div><div class="title">'+esc(x.name)+'</div><div class="muted">سعر البيع: '+fmtPrice(x.price)+'</div></div>'+
+          '<div style="text-align:left"><b>'+N(x.ready)+'</b><div class="muted">جاهز</div></div></div>'+
+          '<div class="actions"><span class="tag">📋 مطلوب '+N(x.required)+'</span><span class="tag">🛠️ تجهيز '+N(x.inProgress)+'</span></div></div>';
+      }).join('')||'<div class="card empty">أضف أول موديل</div>');
+  };
+
+  window.modelDetail=function(m){
+    var x=db.models.find(function(z){return Number(z.id)===Number(activeModel);});
+    if(!x){show('models');return;}
+
+    var cuts=db.cuts.filter(function(c){return Number(c.modelId)===Number(x.id);}).slice().reverse();
+    var cutHtml=cuts.map(function(c){
+      var mat=db.materials.find(function(z){return Number(z.id)===Number(c.materialId);});
+      var inProg=N(c.piecesInProgress), produced=N(c.piecesProduced);
+      var action='';
+      if(c.status==='جاري القص') action='<button class="small" onclick="cutFinish('+c.id+')">إنهاء القصّة</button>';
+      else if(c.status==='جاري التجهيز'&&inProg>0) action='<button class="secondary small" onclick="production('+x.id+')">تسجيل إنتاج</button>';
+      return '<div class="card"><div class="split"><div><b>قصّة #'+c.id+'</b>'+
+        '<div class="muted">'+esc(mat?.name||'خامة')+' — '+N(c.fabricQty)+' '+esc(mat?.unit||'متر')+'</div></div>'+
+        '<span class="tag">'+esc(c.status||'—')+'</span></div>'+
+        '<div class="muted" style="margin-top:7px">الناتج الفعلي: '+produced+' قطعة'+
+        (produced?' — استهلاك فعلي '+N(c.actualMetersPerPiece||0).toFixed(2)+' متر/قطعة':'')+
+        ' — جاري تجهيز: '+inProg+' — جاهز من القصّة: '+N(c.piecesReady)+'</div>'+
+        '<div class="actions">'+action+'</div></div>';
+    }).join('')||'<div class="empty">لا توجد قصّات</div>';
+
+    m.innerHTML='<div class="section"><button class="back secondary small" onclick="show(\'models\')">رجوع</button><h2>'+esc(x.name)+'</h2></div>'+
+      '<div class="card"><div class="grid3"><div class="metric"><span>🛠️ جاري التجهيز</span><b>'+N(x.inProgress)+'</b></div>'+
+      '<div class="metric"><span>📦 جاهز</span><b>'+N(x.ready)+'</b></div>'+
+      '<div class="metric"><span>📋 مطلوب</span><b>'+N(x.required)+'</b></div></div></div>'+
+      '<div class="card"><div class="split"><div><div class="title">سعر البيع الرسمي</div>'+
+      '<div class="big">'+fmtPrice(x.price)+'</div></div>'+
+      '<button class="secondary small" onclick="editModelPrice('+x.id+')">تعديل السعر</button></div>'+
+      '<div class="muted" style="margin-top:7px">'+
+      (N(x.price)>0?'السعر الرسمي محفوظ، ويمكن تعديل سعر أي فاتورة بشكل مستقل.':'الموديل غير متسعر بعد — عند إنشاء أول فاتورة سيطلب البرنامج سعر البيع.')+
+      '</div>'+
+      '<div class="actions"><button onclick="cutStart('+x.id+')">✂️ ابدأ قصّة</button>'+
+      '<button class="secondary" onclick="production('+x.id+')">🏭 تسجيل إنتاج</button></div></div>'+
+      '<div class="section"><h2>🧵 خامات وإكسسوارات الموديل</h2></div>'+
+      '<div class="card"><div class="muted">أضف أكثر من خامة، وكل خامة لها استهلاك مستقل.</div>'+
+      '<div class="inlineadd" style="margin-top:8px"><div><select id="recipeMat">'+
+      db.materials.map(function(z){return '<option value="'+z.id+'">'+esc(z.name)+' '+(z.color?'— '+esc(z.color):'')+'</option>';}).join('')+
+      '</select></div><div style="max-width:120px"><input id="recipeQty" type="number" min="0" step="0.01" placeholder="الاستهلاك"></div>'+
+      '<button onclick="recipeAdd('+x.id+')">+ إضافة</button></div>'+
+      (x.recipe.map(function(r){var z=db.materials.find(function(q){return Number(q.id)===Number(r.materialId);});
+        return '<div class="item"><span>'+esc(z?.name||'خامة')+' '+(z?.color?'— '+esc(z.color):'')+
+          '</span><b>'+N(r.qty)+' '+esc(z?.unit||'')+' / قطعة</b></div>';
+      }).join('')||'<div class="empty">لم تتم إضافة خامات للموديل بعد</div>')+
+      '</div><div class="section"><h2>✂️ دورة القص والإنتاج</h2></div>'+cutHtml+
+      '<div class="card"><div class="title">📝 ملاحظات</div><div class="muted">'+esc(x.note||'لا توجد ملاحظات')+'</div></div>';
+  };
+
+  window.sale=function(){
+    var cs=db.customers.map(function(x){return '<option value="'+x.id+'">'+esc(x.name)+'</option>';}).join('');
+    var ms=db.models.map(function(x){return '<option value="'+x.id+'" data-ready="'+N(x.ready)+'" data-price="'+N(x.price)+'">'+esc(x.name)+'</option>';}).join('');
+    if(!cs)return alert('أضف عميلًا أولًا قبل إصدار الفاتورة');
+    if(!ms)return alert('أضف موديلًا أولًا قبل إصدار الفاتورة');
+
+    modal('🧾 فاتورة',
+      '<div class="field"><label>العميل</label><div class="inlineadd"><div><select id="s_customer">'+cs+'</select></div>'+
+      '<button class="secondary" onclick="closeModal();add(\'customer\')">+ عميل</button></div></div>'+
+      '<div class="field"><label>الموديل</label><select id="s_model" onchange="invoiceLive()">'+ms+'</select></div>'+
+      '<div class="grid3"><div class="metric"><span>الجاهز</span><b id="s_ready">0</b></div>'+
+      '<div class="metric"><span>السعر الرسمي</span><b id="s_official">غير محدد</b></div>'+
+      '<div class="metric"><span>الإجمالي</span><b id="s_total">0 ج</b></div></div>'+
+      '<div class="field"><label>سعر البيع في الفاتورة</label><input id="s_unitPrice" type="number" min="0.01" step="0.01" oninput="invoiceLive()" placeholder="لو الموديل غير متسعر، اكتب السعر هنا"></div>'+
+      '<div class="field"><label>الكمية</label><input id="s_qty" type="number" min="1" value="1" oninput="invoiceLive()"></div>'+
+      '<div id="s_price_hint" class="muted"></div><div id="s_warn" class="red"></div>'+
+      '<button style="width:100%" onclick="saveSale()">حفظ الفاتورة</button>'
+    );
+    invoiceLive();
+  };
+
+  window.invoiceLive=function(){
+    var sel=document.getElementById('s_model');
+    var o=sel?.options[sel.selectedIndex];
+    var ready=N(o?.dataset.ready), official=N(o?.dataset.price), q=Math.floor(N(document.getElementById('s_qty')?.value));
+    var priceEl=document.getElementById('s_unitPrice');
+    if(priceEl && document.activeElement!==priceEl && priceEl.value==='') priceEl.value=official>0?official:'';
+    var unit=N(priceEl?.value);
+    var sr=document.getElementById('s_ready'), so=document.getElementById('s_official'), st=document.getElementById('s_total');
+    if(sr)sr.textContent=ready;
+    if(so)so.textContent=official>0?money(official):'غير محدد';
+    if(st)st.textContent=money(q*unit);
+    var hint=document.getElementById('s_price_hint');
+    if(hint)hint.textContent=official>0?'يمكن تغيير سعر هذه الفاتورة فقط دون تغيير السعر الرسمي للموديل.':'⚠️ الموديل غير متسعر — اكتب سعر البيع لهذه الفاتورة لإكمالها.';
+    var warn=document.getElementById('s_warn');
+    if(warn)warn.textContent=q>ready?'⚠️ الكمية أكبر من الجاهز المتاح':(q<=0?'⚠️ اكتب كمية صحيحة':'');
+  };
+
+  window.saveSale=function(){
+    var x=db.models.find(function(z){return Number(z.id)===Number(document.getElementById('s_model')?.value);});
+    var q=Math.floor(N(document.getElementById('s_qty')?.value));
+    var customerId=N(document.getElementById('s_customer')?.value);
+    var unitPrice=N(document.getElementById('s_unitPrice')?.value);
+    if(!x||!customerId||q<=0)return alert('اختر العميل والموديل والكمية');
+    if(q>x.ready)return alert('لا يمكن بيع أكثر من الجاهز');
+    if(unitPrice<=0)return alert('اكتب سعر البيع للقطعة');
+    var total=q*unitPrice;
+    x.ready-=q;x.sold=N(x.sold)+q;
+    // Actual sale reduces current demand; never below zero.
+    x.required=Math.max(0,N(x.required)-q);
+    db.sales.push({
+      id:Date.now(),customerId:customerId,modelId:x.id,qty:q,
+      unitPrice:unitPrice,total:total,
+      officialPriceAtSale:N(x.price),
+      date:new Date().toISOString()
+    });
+    save();closeModal();toast('تم حفظ الفاتورة — المبلغ ظهر على العميل كـ ليا');render();
+  };
+
+  function customerBalance(id){
+    var sold=db.sales.filter(function(s){return Number(s.customerId)===Number(id);}).reduce(function(a,s){return a+N(s.total);},0);
+    var paid=db.payments.filter(function(p){return Number(p.customerId)===Number(id);}).reduce(function(a,p){return a+N(p.amount);},0);
+    return sold-paid;
+  }
+
+  window.customerDetail=function(id){
+    var c=db.customers.find(function(z){return Number(z.id)===Number(id);});
+    if(!c){show('customers');return;}
+    var sales=db.sales.filter(function(s){return Number(s.customerId)===Number(id);});
+    var pays=db.payments.filter(function(p){return Number(p.customerId)===Number(id);});
+    var sold=sales.reduce(function(a,s){return a+N(s.total);},0);
+    var paid=pays.reduce(function(a,p){return a+N(p.amount);},0);
+    var balance=sold-paid;
+    var inv=sales.slice().reverse().map(function(s){
+      var mo=db.models.find(function(z){return Number(z.id)===Number(s.modelId);});
+      return '<div class="item"><div><b>فاتورة #'+s.id+'</b><div class="muted">'+esc(mo?.name||'موديل')+
+        ' — '+N(s.qty)+' قطعة × '+money(N(s.unitPrice || (s.qty? s.total/s.qty:0)))+'</div></div><b>'+money(s.total)+'</b></div>';
+    }).join('')||'<div class="empty">لا توجد فواتير</div>';
+    var ph=pays.slice().reverse().map(function(p){
+      return '<div class="item"><div><b>دفعة</b><div class="muted">'+new Date(p.date||Date.now()).toLocaleDateString('ar-EG')+
+        '</div></div><b class="green">+'+money(p.amount)+'</b></div>';
+    }).join('')||'<div class="empty">لا توجد دفعات</div>';
+
+    document.getElementById('main').innerHTML=
+      '<div class="section"><button class="back secondary small" onclick="show(\'customers\')">رجوع</button><h2>'+esc(c.name)+'</h2></div>'+
+      '<div class="card"><div class="grid3"><div class="metric"><span>ليا</span><b>'+money(balance)+'</b></div>'+
+      '<div class="metric"><span>المبيعات</span><b>'+money(sold)+'</b></div>'+
+      '<div class="metric"><span>الدفعات</span><b>'+money(paid)+'</b></div></div>'+
+      '<div class="actions"><button onclick="customerPay('+c.id+')">💵 تسجيل دفعة</button></div></div>'+
+      '<div class="card"><div class="title">🧾 الفواتير</div>'+inv+'</div>'+
+      '<div class="card"><div class="title">💵 دفعات العملاء</div>'+ph+'</div>';
+  };
+
+  window.customerPay=function(id){
+    var c=db.customers.find(function(z){return Number(z.id)===Number(id);});
+    if(!c)return;
+    var balance=customerBalance(id);
+    modal('💵 دفعة عميل — '+esc(c.name),
+      '<div class="card"><div class="muted">الرصيد الحالي (ليا)</div><div class="big">'+money(balance)+'</div></div>'+
+      '<div class="field"><label>مبلغ الدفعة</label><input id="cp_amt" type="number" min="0.01" step="0.01"></div>'+
+      '<button style="width:100%" onclick="saveCustomerPayment('+id+')">حفظ الدفعة</button>');
+  };
+
+  window.saveCustomerPayment=function(id){
+    var amount=N(document.getElementById('cp_amt')?.value), balance=customerBalance(id);
+    if(amount<=0)return alert('اكتب مبلغ الدفعة');
+    if(amount>balance)return alert('الدفعة أكبر من الرصيد المستحق');
+    db.payments.push({id:Date.now(),customerId:Number(id),amount:amount,date:new Date().toISOString()});
+    save();closeModal();toast('تم تسجيل دفعة العميل');customerDetail(id);
+  };
+
+  window.customers=function(m){
+    m.innerHTML='<div class="section"><h2>👥 العملاء</h2><button onclick="add(\'customer\')" class="small">+ إضافة عميل</button></div>'+
+      (db.customers.map(function(c){
+        var balance=customerBalance(c.id);
+        var sold=db.sales.filter(function(s){return Number(s.customerId)===Number(c.id);}).reduce(function(a,s){return a+N(s.total);},0);
+        var paid=db.payments.filter(function(p){return Number(p.customerId)===Number(c.id);}).reduce(function(a,p){return a+N(p.amount);},0);
+        return '<div class="card" onclick="customerDetail('+c.id+')"><div class="split"><div class="title">'+esc(c.name)+'</div><b>'+money(balance)+'</b></div>'+
+          '<div class="muted">مبيعات '+money(sold)+' — دفعات '+money(paid)+'</div>'+
+          '<div class="actions"><button class="secondary small" onclick="event.stopPropagation();customerPay('+c.id+')">+ دفعة</button></div></div>';
+      }).join('')||'<div class="card empty">أضف أول عميل</div>');
+  };
+
+  window.savePurchase=function(){
+    var matId=N(document.getElementById('p_mat')?.value);
+    var supId=N(document.getElementById('p_sup')?.value);
+    var mat=db.materials.find(function(x){return Number(x.id)===matId;});
+    var sup=db.suppliers.find(function(x){return Number(x.id)===supId;});
+    var qty=N(document.getElementById('p_qty')?.value);
+    var total=N(document.getElementById('p_total')?.value);
+    if(!mat||qty<=0)return alert('اختر خامة وأدخل الكمية');
+    if(!sup)return alert('اختار المورد — الشراء لازم يرتبط بمورد');
+    if(total<=0)return alert('اكتب إجمالي شراء صحيح');
+    mat.stock=N(mat.stock)+qty;
+    db.purchases.push({id:Date.now(),materialId:mat.id,qty:qty,total:total,supplierId:sup.id,date:new Date().toISOString()});
+    save();closeModal();toast('تم الشراء — المخزون زاد والمبلغ ظهر كـ عليا للمورد');render();
+  };
+
+  window.saveSupplierPay=function(id){
+    var amount=N(document.getElementById('sp_amt')?.value);
+    var bought=db.purchases.filter(function(p){return Number(p.supplierId)===Number(id);}).reduce(function(a,p){return a+N(p.total);},0);
+    var paid=db.supplierPayments.filter(function(p){return Number(p.supplierId)===Number(id);}).reduce(function(a,p){return a+N(p.amount);},0);
+    var balance=bought-paid;
+    if(amount<=0)return alert('اكتب المبلغ');
+    if(amount>balance)return alert('دفعة المورد أكبر من المديونية الحالية');
+    db.supplierPayments.push({id:Date.now(),supplierId:Number(id),amount:amount,date:new Date().toISOString()});
+    save();closeModal();toast('تم تسجيل دفعة المورد');render();
+  };
+
+  window.accounts=function(m){
+    var salesTotal=db.sales.reduce(function(a,x){return a+N(x.total);},0);
+    var collections=db.payments.reduce(function(a,x){return a+N(x.amount);},0);
+    var purchases=db.purchases.reduce(function(a,x){return a+N(x.total);},0);
+    var supplierPaid=db.supplierPayments.reduce(function(a,x){return a+N(x.amount);},0);
+    var expensesTotal=db.expenses.reduce(function(a,x){return a+N(x.amount);},0);
+    m.innerHTML='<div class="section"><h2>💰 الحسابات</h2></div>'+
+      '<div class="grid"><div class="card metric"><span>ليا — العملاء</span><b>'+money(Math.max(0,salesTotal-collections))+'</b></div>'+
+      '<div class="card metric"><span>عليا — الموردين</span><b>'+money(Math.max(0,purchases-supplierPaid))+'</b></div></div>'+
+      '<div class="grid"><div class="card metric"><span>المبيعات</span><b>'+money(salesTotal)+'</b></div>'+
+      '<div class="card metric"><span>التحصيل</span><b>'+money(collections)+'</b></div></div>'+
+      '<div class="grid"><div class="card metric"><span>المشتريات — مخزون</span><b>'+money(purchases)+'</b></div>'+
+      '<div class="card metric"><span>مصروفات المصنع</span><b>'+money(expensesTotal)+'</b></div></div>'+
+      '<div class="card"><div class="muted">المشتريات ليست مصروف تشغيل؛ هي خامات تدخل المخزن، وتظهر مديونية المورد منفصلة.</div>'+
+      '<button style="width:100%;margin-top:8px" onclick="show(\'purchasesHistory\')">🧾 عرض سجل المشتريات</button></div>';
+  };
+})();
+</script>
+
+
+<script>
+/* RETAG V20 — only the 3 requested test fixes, layered on V13.
+   1) A single cut can contain multiple fabrics.
+   2) Starting a cut records fabric only; piece count is unknown until finishing.
+   3) Official model price vs invoice price is kept logically separate.
+*/
+(function(){
+  const num=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
+
+  // ---- 1 + 2: multi-fabric cut, no piece count at start ----
+  window.cutMaterialRow=function(fabrics){
+    return `<div class="cut-row" style="display:grid;grid-template-columns:1fr 115px 38px;gap:8px;align-items:end;margin-bottom:8px">
+      <div class="field" style="margin:0"><label>نوع القماش</label>
+        <select class="cut-mat">${fabrics.map(x=>`<option value="${x.id}">${esc(x.name)} ${x.color?'— '+esc(x.color):''} — المتاح ${num(x.stock)} ${esc(x.unit)}</option>`).join('')}</select>
+      </div>
+      <div class="field" style="margin:0"><label>الكمية</label>
+        <input class="cut-qty" type="number" min="0.01" step="0.01" placeholder="مثال 500">
+      </div>
+      <button type="button" class="secondary" onclick="this.closest('.cut-row').remove();checkCutStock()">×</button>
+    </div>`;
+  };
+
+  window.addCutMaterialRow=function(){
+    const wrap=document.getElementById('cutMaterials');
+    const fabrics=db.materials.filter(x=>x.kind==='قماش' && num(x.stock)>0);
+    if(!wrap||!fabrics.length)return alert('مفيش قماش متاح في المخزن');
+    wrap.insertAdjacentHTML('beforeend',cutMaterialRow(fabrics));
+    checkCutStock();
+  };
+
+  window.checkCutStock=function(){
+    const warn=document.getElementById('c_stock_warn');
+    const totals={};
+    document.querySelectorAll('#cutMaterials .cut-row').forEach(r=>{
+      const id=num(r.querySelector('.cut-mat')?.value);
+      const q=num(r.querySelector('.cut-qty')?.value);
+      if(id)totals[id]=(totals[id]||0)+q;
+    });
+    let bad=false;
+    Object.keys(totals).forEach(id=>{
+      const m=db.materials.find(x=>Number(x.id)===Number(id));
+      if(m&&totals[id]>num(m.stock))bad=true;
+    });
+    if(warn)warn.textContent=bad?'⚠️ الكمية أكبر من المتاح في واحد من أنواع القماش':'';
+    return !bad;
+  };
+
+  window.cutStart=function(modelId){
+    const models=db.models.map(x=>`<option value="${x.id}" ${Number(x.id)===Number(modelId)?'selected':''}>${esc(x.name)}</option>`).join('');
+    const fabrics=db.materials.filter(x=>x.kind==='قماش' && num(x.stock)>0);
+    if(!fabrics.length)return alert('مفيش قماش متاح في المخزن. سجّل شراء القماش الأول.');
+    modal('✂️ ابدأ قصّة',
+      `<div class="field"><label>الموديل</label><select id="c_model">${models}</select></div>
+       <div class="card">
+         <div class="split"><div class="title">القماش الداخل للبنك</div>
+         <button type="button" class="secondary small" onclick="addCutMaterialRow()">+ نوع قماش</button></div>
+         <div id="cutMaterials">${cutMaterialRow(fabrics)}</div>
+         <div id="c_stock_warn" class="red"></div>
+       </div>
+       <div class="field"><label>ملاحظة</label><input id="c_note"></div>
+       <button style="width:100%" onclick="saveCut()">✂️ تسجيل بداية القص</button>`
+    );
+    setTimeout(()=>{
+      document.querySelectorAll('#cutMaterials .cut-qty').forEach(e=>e.addEventListener('input',checkCutStock));
+      document.querySelectorAll('#cutMaterials .cut-mat').forEach(e=>e.addEventListener('change',checkCutStock));
+    },0);
+  };
+
+  window.saveCut=function(){
+    const model=document.getElementById('c_model'), rows=[...document.querySelectorAll('#cutMaterials .cut-row')];
+    const x=db.models.find(z=>Number(z.id)===Number(model?.value));
+    const totals={};
+    rows.forEach(r=>{
+      const id=num(r.querySelector('.cut-mat')?.value),q=num(r.querySelector('.cut-qty')?.value);
+      if(id&&q>0)totals[id]=(totals[id]||0)+q;
+    });
+    const materials=Object.keys(totals).map(id=>({materialId:Number(id),qty:totals[id]}));
+    if(!x||!materials.length)return alert('اختار الموديل وأدخل نوع قماش وكمية على الأقل');
+    for(const a of materials){
+      const m=db.materials.find(z=>Number(z.id)===Number(a.materialId));
+      if(!m||a.qty>num(m.stock))return alert('الكمية أكبر من المتاح في '+(m?.name||'القماش'));
+    }
+    materials.forEach(a=>{
+      const m=db.materials.find(z=>Number(z.id)===Number(a.materialId));
+      m.stock=num(m.stock)-a.qty;
+    });
+    const totalFabric=materials.reduce((sum,a)=>sum+num(a.qty),0);
+    db.cuts.push({
+      id:Date.now(),modelId:x.id,
+      materialId:materials[0].materialId,fabricQty:totalFabric,materials:materials,
+      start:new Date().toISOString(),end:null,note:document.getElementById('c_note')?.value||'',
+      pieces:0,piecesProduced:0,piecesReady:0,piecesInProgress:0,status:'جاري القص'
+    });
+    // No pieces are added here. We do not know the output yet.
+    x.inProgress=num(x.inProgress);
+    save();closeModal();toast('بدأت القصّة — اتسجلت الخامات والكميات فقط');render();
+  };
+
+  window.cutFinish=function(cutId){
+    const c=db.cuts.find(x=>Number(x.id)===Number(cutId));
+    if(!c)return;
+    const mats=c.materials||[{materialId:c.materialId,qty:c.fabricQty}];
+    const list=mats.map(a=>{
+      const m=db.materials.find(z=>Number(z.id)===Number(a.materialId));
+      return `<div class="item"><span>${esc(m?.name||'قماش')} ${m?.color?'— '+esc(m.color):''}</span><b>${num(a.qty)} ${esc(m?.unit||'متر')}</b></div>`;
+    }).join('');
+    modal('✅ إنهاء القصّة',
+      `<div class="card"><div class="title">الخامات الداخلة للبنك</div>${list}</div>
+       <div class="field"><label>عدد القطع الفعلي اللي طلعت من البنك</label>
+       <input id="finish_pieces" type="number" min="1" step="1" placeholder="مثال: 190"></div>
+       <div class="muted">هنا فقط بنسجل عدد القطع اللي طلعت فعليًا.</div>
+       <button style="width:100%" onclick="saveCutFinish(${c.id})">إنهاء القصّة</button>`
+    );
+  };
+
+  window.saveCutFinish=function(cutId){
+    const c=db.cuts.find(x=>Number(x.id)===Number(cutId));
+    const pieces=Math.floor(num(document.getElementById('finish_pieces')?.value));
+    if(!c||pieces<=0)return alert('أدخل عدد القطع الفعلي');
+    c.pieces=pieces;c.piecesProduced=pieces;c.piecesReady=0;c.piecesInProgress=pieces;
+    c.end=new Date().toISOString();
+    c.actualMetersPerPiece=num(c.fabricQty)/pieces;
+    c.status='جاري التجهيز';
+    const x=db.models.find(z=>Number(z.id)===Number(c.modelId));
+    if(x){x.inProgress=num(x.inProgress)+pieces;x.produced=num(x.produced)+pieces;}
+    save();closeModal();toast('انتهت القصّة — '+pieces+' قطعة دخلت جاري التجهيز');render();
+  };
+
+  // ---- 3: official model price + invoice price ----
+  window.editModelPrice=function(id){
+    const x=db.models.find(z=>Number(z.id)===Number(id));
+    if(!x)return;
+    modal('💰 سعر البيع الرسمي',
+      `<div class="card"><div class="muted">السعر الحالي</div>
+       <div class="big">${num(x.price)>0?money(x.price):'غير محدد'}</div></div>
+       <div class="field"><label>السعر الرسمي للقطعة</label>
+       <input id="mp_price" type="number" min="0.01" step="0.01" value="${num(x.price)>0?num(x.price):''}" placeholder="مثال: 100"></div>
+       <button style="width:100%" onclick="saveModelPrice(${id})">حفظ السعر الرسمي</button>`
+    );
+  };
+  window.saveModelPrice=function(id){
+    const x=db.models.find(z=>Number(z.id)===Number(id)),p=num(document.getElementById('mp_price')?.value);
+    if(!x||p<=0)return alert('اكتب سعرًا صحيحًا');
+    x.price=p;save();closeModal();toast('تم حفظ السعر الرسمي');render();
+  };
+
+  // Replace model detail only to add a clear official-price edit point.
+  window.modelDetail=function(m){
+    const x=db.models.find(z=>Number(z.id)===Number(activeModel));
+    if(!x){show('models');return;}
+    const cuts=db.cuts.filter(c=>Number(c.modelId)===Number(x.id)).slice().reverse();
+    const cutHtml=cuts.map(c=>{
+      const mat=db.materials.find(z=>Number(z.id)===Number(c.materialId));
+      const produced=num(c.piecesProduced),inProg=num(c.piecesInProgress);
+      const action=c.status==='جاري القص'?`<button class="small" onclick="cutFinish(${c.id})">إنهاء القصّة</button>`:
+        (c.status==='جاري التجهيز'&&inProg>0?`<button class="secondary small" onclick="production(${x.id})">تسجيل إنتاج</button>`:'');
+      const mats=(c.materials||[{materialId:c.materialId,qty:c.fabricQty}]).map(a=>{
+        const mm=db.materials.find(z=>Number(z.id)===Number(a.materialId));
+        return `${esc(mm?.name||'خامة')} ${mm?.color?'— '+esc(mm.color):''} — ${num(a.qty)} ${esc(mm?.unit||'متر')}`;
+      }).join(' + ');
+      return `<div class="card"><div class="split"><div><b>قصّة #${c.id}</b><div class="muted">${mats}</div></div><span class="tag">${esc(c.status||'—')}</span></div>
+      <div class="muted" style="margin-top:7px">الناتج الفعلي: ${produced} قطعة${produced?' — استهلاك فعلي '+num(c.actualMetersPerPiece||0).toFixed(2)+' متر/قطعة':''} — جاري تجهيز: ${inProg} — جاهز من القصّة: ${num(c.piecesReady)}</div>
+      <div class="actions">${action}</div></div>`;
+    }).join('')||'<div class="empty">لا توجد قصّات</div>';
+
+    m.innerHTML=`<div class="section"><button class="back secondary small" onclick="show('models')">رجوع</button><h2>${esc(x.name)}</h2></div>
+      <div class="card"><div class="grid3">
+      <div class="metric"><span>🛠️ تجهيز</span><b>${num(x.inProgress)}</b></div>
+      <div class="metric"><span>📦 جاهز</span><b>${num(x.ready)}</b></div>
+      <div class="metric"><span>📋 مطلوب</span><b>${num(x.required)}</b></div></div></div>
+      <div class="card"><div class="split"><div><div class="title">سعر البيع الرسمي</div>
+      <div class="big">${num(x.price)>0?money(x.price):'غير محدد'}</div></div>
+      <button class="secondary small" onclick="editModelPrice(${x.id})">تعديل السعر</button></div>
+      <div class="actions"><button onclick="cutStart(${x.id})">✂️ ابدأ قصّة</button>
+      <button class="secondary" onclick="production(${x.id})">🏭 تسجيل إنتاج</button></div></div>
+      <div class="card"><div class="title">🧵 خامات وإكسسوارات الموديل</div>
+      <div class="inlineadd"><div><select id="recipeMat">${db.materials.map(z=>`<option value="${z.id}">${esc(z.name)} ${z.color?'— '+esc(z.color):''}</option>`).join('')}</select></div>
+      <button onclick="recipeAdd(${x.id})">+ إضافة</button></div>
+      ${x.recipe.map(r=>`<div class="item"><span>${esc(db.materials.find(z=>z.id===r.materialId)?.name||'')}</span><b>${r.qty} / قطعة</b></div>`).join('')}</div>
+      <div class="card"><div class="title">✂️ سجل القصّات</div>${cutHtml}</div>
+      <div class="card"><div class="title">📝 ملاحظات</div><div class="muted">${esc(x.note||'لا توجد ملاحظات')}</div></div>`;
+  };
+
+  window.sale=function(){
+    const cs=db.customers.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('');
+    const ms=db.models.map(x=>`<option value="${x.id}" data-ready="${num(x.ready)}" data-price="${num(x.price)}">${esc(x.name)}</option>`).join('');
+    if(!cs)return alert('أضف عميلًا أولًا قبل إصدار الفاتورة');
+    if(!ms)return alert('أضف موديلًا أولًا قبل إصدار الفاتورة');
+    modal('🧾 فاتورة',
+      `<div class="field"><label>العميل</label><div class="inlineadd"><div><select id="s_customer">${cs}</select></div><button class="secondary" onclick="closeModal();add('customer')">+ عميل</button></div></div>
+      <div class="field"><label>الموديل</label><select id="s_model" onchange="invoiceLive()">${ms}</select></div>
+      <div class="grid3"><div class="metric"><span>الجاهز</span><b id="s_ready">0</b></div>
+      <div class="metric"><span>السعر الرسمي</span><b id="s_official">غير محدد</b></div>
+      <div class="metric"><span>الإجمالي</span><b id="s_total">0 ج</b></div></div>
+      <div class="field"><label>سعر البيع في الفاتورة</label><input id="s_unitPrice" type="number" min="0.01" step="0.01" placeholder="اكتب السعر لو الموديل غير متسعر" oninput="invoiceLive()"></div>
+      <div class="field"><label>الكمية</label><input id="s_qty" type="number" min="1" value="1" oninput="invoiceLive()"></div>
+      <div id="s_price_hint" class="muted"></div><div id="s_warn" class="red"></div>
+      <button style="width:100%" onclick="saveSale()">حفظ الفاتورة</button>`);
+    invoiceLive();
+  };
+
+  window.invoiceLive=function(){
+    const o=document.getElementById('s_model')?.options[document.getElementById('s_model')?.selectedIndex];
+    const ready=num(o?.dataset.ready),official=num(o?.dataset.price),q=Math.floor(num(document.getElementById('s_qty')?.value));
+    const p=document.getElementById('s_unitPrice');
+    if(p && document.activeElement!==p && !p.value && official>0)p.value=official;
+    const unit=num(p?.value);
+    const r=document.getElementById('s_ready'),off=document.getElementById('s_official'),tot=document.getElementById('s_total');
+    if(r)r.textContent=ready;
+    if(off)off.textContent=official>0?money(official):'غير محدد';
+    if(tot)tot.textContent=money(q*unit);
+    const hint=document.getElementById('s_price_hint');
+    if(hint)hint.textContent=official>0?'السعر الرسمي ظاهر هنا. لو هتبيع بسعر مختلف، غيّر سعر الفاتورة فقط.':'الموديل لسه ملوش سعر رسمي — اكتب سعر البيع هنا عشان نكمل الفاتورة.';
+    const warn=document.getElementById('s_warn');
+    if(warn)warn.textContent=q>ready?'⚠️ الكمية أكبر من الجاهز المتاح':(q<=0?'⚠️ اكتب كمية صحيحة':'');
+  };
+
+  window.saveSale=function(){
+    const x=db.models.find(z=>Number(z.id)===Number(document.getElementById('s_model')?.value));
+    const q=Math.floor(num(document.getElementById('s_qty')?.value));
+    const customerId=num(document.getElementById('s_customer')?.value);
+    const unit=num(document.getElementById('s_unitPrice')?.value);
+    if(!x||!customerId||q<=0)return alert('اختر العميل والموديل والكمية');
+    if(q>x.ready)return alert('لا يمكن بيع أكثر من الجاهز');
+    if(unit<=0)return alert('اكتب سعر البيع للقطعة');
+    const total=q*unit;
+    x.ready-=q;x.sold=num(x.sold)+q;
+    x.required=Math.max(0,num(x.required)-q);
+    db.sales.push({id:Date.now(),customerId,modelId:x.id,qty:q,unitPrice:unit,total,officialPriceAtSale:num(x.price),date:new Date().toISOString()});
+    save();closeModal();toast('تم حفظ الفاتورة');render();
+  };
+})();
+</script>
+
+
+<script>
+/* RETAG V21 — internal QA guard; no new workflow.
+   Keeps the tested business rules coherent when old/demo localStorage data is opened.
+*/
+(function(){
+  const arr=['suppliers','materials','customers','models','purchases','cuts','sales','payments','supplierPayments','returns','expenses','requests'];
+  arr.forEach(k=>{if(!Array.isArray(db[k]))db[k]=[]});
+
+  db.models.forEach(m=>{
+    ['price','ready','inProgress','required','produced','sold','returned'].forEach(k=>m[k]=Number(m[k])||0);
+    if(!Array.isArray(m.recipe))m.recipe=[];
+  });
+
+  db.materials.forEach(m=>{
+    m.stock=Number(m.stock)||0;
+    m.threshold=Number(m.threshold)||0;
+  });
+
+  db.cuts.forEach(c=>{
+    c.fabricQty=Number(c.fabricQty)||0;
+    c.pieces=Number(c.pieces)||0;
+    c.piecesProduced=Number(c.piecesProduced)||c.pieces;
+    c.piecesReady=Number(c.piecesReady)||0;
+    c.piecesInProgress=Number(c.piecesInProgress)||0;
+    if(!Array.isArray(c.materials) && c.materialId!=null)
+      c.materials=[{materialId:Number(c.materialId),qty:Number(c.fabricQty)||0}];
+
+    // A cut that has only started must never contribute pieces.
+    if(c.status==='جاري القص'){
+      c.pieces=0;c.piecesProduced=0;c.piecesReady=0;c.piecesInProgress=0;
+    }
+
+    // If a completed cut has an output count, derive its actual per-piece usage.
+    if(c.status==='جاري التجهيز' && c.piecesProduced>0)
+      c.actualMetersPerPiece=c.fabricQty/c.piecesProduced;
+  });
+  save();
+})();
+</script>
+
+
+<script>
+/* RETAG V24 — Warehouse first-pass
+   - Main warehouse shows only materials with stock != 0
+   - Zero-stock materials remain available in history
+   - Material detail shows stock, low-stock state, purchase history and unit purchase prices
+   - Purchase remains inventory acquisition, separate from operating expenses
+   - No changes to cutting / production / invoice logic
+*/
+(function(){
+  function N(v){var x=Number(v);return Number.isFinite(x)?x:0;}
+  function dateEG(v){
+    try{return new Date(v||Date.now()).toLocaleDateString('ar-EG',{year:'numeric',month:'2-digit',day:'2-digit'});}
+    catch(e){return '—';}
+  }
+  function materialLabel(x){
+    return esc(x?.name||'خامة')+(x?.color?' — '+esc(x.color):'');
+  }
+
+  window.materialDetail=function(id){
+    var x=db.materials.find(function(z){return Number(z.id)===Number(id);});
+    if(!x){show('stock');return;}
+    var purchases=db.purchases.filter(function(p){return Number(p.materialId)===Number(x.id);}).slice().reverse();
+    var totalQty=purchases.reduce(function(a,p){return a+N(p.qty);},0);
+    var totalCost=purchases.reduce(function(a,p){return a+N(p.total);},0);
+    var avg=totalQty>0?totalCost/totalQty:0;
+    var threshold=N(x.threshold);
+
+    var hist=purchases.map(function(p){
+      var sup=db.suppliers.find(function(s){return Number(s.id)===Number(p.supplierId);});
+      var unit=N(p.qty)>0?N(p.total)/N(p.qty):0;
+      return '<div class="item"><div><b>'+dateEG(p.date)+'</b>'+
+        '<div class="muted">'+N(p.qty)+' '+esc(x.unit||'وحدة')+
+        ' — '+money(p.total)+' — '+(sup?esc(sup.name):'بدون مورد')+'</div></div>'+
+        '<b>'+money(unit)+' / '+esc(x.unit||'وحدة')+'</b></div>';
+    }).join('') || '<div class="empty">لا توجد مشتريات مسجلة لهذه الخامة</div>';
+
+    var state = N(x.stock)<=0
+      ? '<span class="tag">نفد المخزون</span>'
+      : (threshold>0 && N(x.stock)<=threshold
+        ? '<span class="tag">⚠️ يحتاج شراء</span>'
+        : '<span class="tag">متاح</span>');
+
+    document.getElementById('main').innerHTML=
+      '<div class="section"><button class="back secondary small" onclick="show(\\'stock\\')">رجوع</button><h2>'+materialLabel(x)+'</h2></div>'+
+      '<div class="card"><div class="split"><div><div class="muted">الرصيد الحالي</div><div class="big">'+N(x.stock)+' '+esc(x.unit||'وحدة')+'</div></div>'+state+'</div>'+
+      '<div class="actions"><button onclick="purchaseForMaterial('+x.id+')">🛒 شراء خامة</button><button class="secondary" onclick="show(\\'stockHistory\\')">📋 سجل المخزن</button></div></div>'+
+      '<div class="grid"><div class="card metric"><span>إجمالي المشتريات</span><b>'+N(purchases.length)+'</b></div>'+
+      '<div class="card metric"><span>متوسط سعر الوحدة</span><b>'+money(avg)+'</b></div></div>'+
+      '<div class="section"><h2>🧾 حركات الشراء</h2></div>'+
+      '<div class="card">'+hist+'</div>';
+  };
+
+  window.purchaseForMaterial=function(id){
+    purchase();
+    setTimeout(function(){
+      var el=document.getElementById('p_mat');
+      if(el)el.value=String(id);
+    },0);
+  };
+
+  window.stockHistory=function(m){
+    var rows=db.materials.map(function(x){
+      var purchases=db.purchases.filter(function(p){return Number(p.materialId)===Number(x.id);});
+      var bought=purchases.reduce(function(a,p){return a+N(p.qty);},0);
+      var cost=purchases.reduce(function(a,p){return a+N(p.total);},0);
+      var unit=bought>0?cost/bought:0;
+      var status=N(x.stock)<=0?'نفد':(N(x.threshold)>0&&N(x.stock)<=N(x.threshold)?'يحتاج شراء':'متاح');
+      return '<div class="card" onclick="materialDetail('+x.id+')"><div class="split">'+
+        '<div><div class="title">'+materialLabel(x)+'</div><div class="muted">'+esc(x.kind||'')+' — '+esc(x.unit||'')+'</div></div>'+
+        '<div style="text-align:left"><b>'+N(x.stock)+'</b><div class="muted">'+status+'</div></div></div>'+
+        '<div class="muted" style="margin-top:7px">مشتريات: '+N(purchases.length)+' — متوسط الشراء: '+money(unit)+' / '+esc(x.unit||'وحدة')+'</div></div>';
+    }).join('') || '<div class="card empty">لا توجد خامات</div>';
+
+    m.innerHTML='<div class="section"><button class="back secondary small" onclick="show(\\'stock\\')">رجوع</button><h2>📋 سجل المخزن</h2></div>'+
+      '<div class="muted" style="margin-bottom:8px">الخامات التي رصيدها صفر تظل محفوظة هنا ولا تختفي من النظام.</div>'+rows;
+  };
+
+  window.stock=function(m){
+    var active=db.materials.filter(function(x){return N(x.stock)!==0;});
+    m.innerHTML='<div class="section"><h2>🧵 المخزن</h2><div class="actions">'+
+      '<button onclick="add(\\'material\\')" class="small">+ إضافة خامة</button>'+
+      '<button onclick="show(\\'stockHistory\\')" class="secondary small">📋 سجل المخزن</button></div></div>'+
+      '<div class="card"><button style="width:100%" onclick="purchase()">+ شراء خامة</button></div>'+
+      (active.map(function(x){
+        var alertLow=N(x.threshold)>0&&N(x.stock)<=N(x.threshold);
+        return '<div class="card '+(alertLow?'alert':'')+'" onclick="materialDetail('+x.id+')">'+
+          '<div class="split"><div><div class="title">'+materialLabel(x)+'</div>'+
+          '<div class="muted">'+esc(x.kind||'')+' — '+esc(x.unit||'')+'</div></div>'+
+          '<div style="text-align:left"><b class="'+(alertLow?'red':'')+'">'+N(x.stock)+'</b>'+
+          '<div class="muted">'+(alertLow?'⚠️ يحتاج شراء':esc(x.unit||''))+'</div></div></div></div>';
+      }).join('') || '<div class="card empty">المخزن الحالي فارغ — ابدأ بشراء خامة</div>');
+  };
+})();
+</script>
+
+
+<script>
+/* RETAG V25 — Consolidated fixes
+   1) Zero-stock materials hidden from main warehouse; history remains accessible.
+   2) Warehouse material cards open details.
+   3) Visible warehouse history entry point.
+   4) Customer returns reduce receivable by returned sale value.
+   5) Supplier balance shown as purchases - supplier payments.
+   6) Cash movement summary from sales, customer payments, purchases, supplier payments, expenses, returns.
+   7) Dashboard entry point and basic P/L summary.
+*/
+(function(){
+  const oldShow = window.show;
+  const num = v => Number.isFinite(Number(v)) ? Number(v) : 0;
+  const esc2 = s => String(s ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const money2 = v => (typeof money === 'function' ? money(num(v)) : num(v).toLocaleString('ar-EG')+' ج');
+
+  function total(list, key){
+    return (list||[]).reduce((a,x)=>a+num(x[key]),0);
+  }
+  function materialById(id){ return (db.materials||[]).find(x=>Number(x.id)===Number(id)); }
+  function customerById(id){ return (db.customers||[]).find(x=>Number(x.id)===Number(id)); }
+  function supplierById(id){ return (db.suppliers||[]).find(x=>Number(x.id)===Number(id)); }
+
+  function warehousePage(m){
+    const active=(db.materials||[]).filter(x=>num(x.stock)!==0);
+    m.innerHTML =
+      '<div class="section"><h2>🧵 المخزن</h2><div class="actions">'+
+      '<button onclick="add(\\'material\\')" class="small">+ إضافة خامة</button>'+
+      '<button onclick="warehouseHistoryPage()" class="secondary small">📋 سجل المخزن</button></div></div>'+
+      '<div class="card"><button style="width:100%" onclick="purchase()">+ شراء خامة</button></div>'+
+      (active.map(x=>{
+        const low=num(x.threshold)>0 && num(x.stock)<=num(x.threshold);
+        return '<div class="card" style="cursor:pointer" onclick="materialDetail('+x.id+')">'+
+          '<div class="split"><div><div class="title">'+esc2(x.name)+(x.color?' — '+esc2(x.color):'')+'</div>'+
+          '<div class="muted">'+esc2(x.kind||'')+' — '+esc2(x.unit||'')+'</div></div>'+
+          '<div style="text-align:left"><b class="'+(low?'red':'')+'">'+num(x.stock)+'</b>'+
+          '<div class="muted">'+(low?'⚠️ يحتاج شراء':esc2(x.unit||''))+'</div></div></div></div>';
+      }).join('') || '<div class="card empty">المخزن الحالي فارغ — ابدأ بشراء خامة</div>');
+  }
+
+  window.materialDetail=function(id){
+    const x=materialById(id); if(!x){return warehousePage(document.getElementById('main'));}
+    const ps=(db.purchases||[]).filter(p=>Number(p.materialId)===Number(x.id)).slice().reverse();
+    const qty=total(ps,'qty'), cost=total(ps,'total'), avg=qty?cost/qty:0;
+    const rows=ps.map(p=>{
+      const s=supplierById(p.supplierId);
+      const unit=num(p.qty)?num(p.total)/num(p.qty):0;
+      return '<div class="item"><div><b>'+esc2(p.date||'')+'</b><div class="muted">'+num(p.qty)+' '+esc2(x.unit||'وحدة')+' — '+money2(p.total)+' — '+esc2(s?.name||'بدون مورد')+'</div></div><b>'+money2(unit)+' / '+esc2(x.unit||'وحدة')+'</b></div>';
+    }).join('')||'<div class="empty">لا توجد مشتريات مسجلة لهذه الخامة</div>';
+    const low=num(x.threshold)>0&&num(x.stock)<=num(x.threshold);
+    document.getElementById('main').innerHTML=
+      '<div class="section"><button class="back secondary small" onclick="warehousePage(document.getElementById(\\'main\\'))">رجوع</button><h2>'+esc2(x.name)+(x.color?' — '+esc2(x.color):'')+'</h2></div>'+
+      '<div class="card"><div class="split"><div><div class="muted">الرصيد الحالي</div><div class="big">'+num(x.stock)+' '+esc2(x.unit||'وحدة')+'</div></div>'+
+      '<span class="tag">'+(num(x.stock)<=0?'نفد المخزون':(low?'⚠️ يحتاج شراء':'متاح'))+'</span></div>'+
+      '<div class="actions"><button onclick="purchaseForMaterial('+x.id+')">🛒 شراء خامة</button><button class="secondary" onclick="warehouseHistoryPage()">📋 سجل المخزن</button></div></div>'+
+      '<div class="grid"><div class="card metric"><span>عمليات الشراء</span><b>'+ps.length+'</b></div><div class="card metric"><span>متوسط سعر الوحدة</span><b>'+money2(avg)+'</b></div></div>'+
+      '<div class="section"><h2>🧾 حركات الشراء</h2></div><div class="card">'+rows+'</div>';
+  };
+
+  window.purchaseForMaterial=function(id){
+    purchase();
+    setTimeout(()=>{const el=document.getElementById('p_mat'); if(el) el.value=String(id);},0);
+  };
+
+  window.warehouseHistoryPage=function(){
+    const m=document.getElementById('main');
+    const rows=(db.materials||[]).map(x=>{
+      const ps=(db.purchases||[]).filter(p=>Number(p.materialId)===Number(x.id));
+      const q=total(ps,'qty'), c=total(ps,'total'), avg=q?c/q:0;
+      return '<div class="card" style="cursor:pointer" onclick="materialDetail('+x.id+')"><div class="split">'+
+        '<div><div class="title">'+esc2(x.name)+(x.color?' — '+esc2(x.color):'')+'</div><div class="muted">الرصيد: '+num(x.stock)+' '+esc2(x.unit||'')+'</div></div>'+
+        '<div style="text-align:left"><b>'+ps.length+'</b><div class="muted">عملية شراء</div></div></div>'+
+        '<div class="muted" style="margin-top:7px">متوسط الشراء: '+money2(avg)+' / '+esc2(x.unit||'وحدة')+'</div></div>';
+    }).join('')||'<div class="card empty">لا توجد خامات</div>';
+    m.innerHTML='<div class="section"><button class="back secondary small" onclick="warehousePage(document.getElementById(\\'main\\'))">رجوع</button><h2>📋 سجل المخزن</h2></div>'+
+      '<div class="muted" style="margin-bottom:8px">السجل يحتفظ بكل الخامات حتى لو أصبح رصيدها صفرًا.</div>'+rows;
+  };
+
+  // Hook the normal stock route while preserving other routes.
+  window.show=function(route){
+    if(route==='stock'){
+      warehousePage(document.getElementById('main'));
+      return;
+    }
+    if(route==='stockHistory'){
+      warehouseHistoryPage();
+      return;
+    }
+    return oldShow.apply(this,arguments);
+  };
+
+  window.customerBalanceV25=function(customerId){
+    const sales=(db.sales||[]).filter(s=>Number(s.customerId)===Number(customerId));
+    const payments=(db.customerPayments||[]).filter(p=>Number(p.customerId)===Number(customerId));
+    const returns=(db.returns||[]).filter(r=>Number(r.customerId)===Number(customerId));
+    return total(sales,'total') - total(payments,'amount') - total(returns,'total');
+  };
+
+  // Conservative return-value helper: if an existing return has total/value, use it;
+  // otherwise derive from the related sale/item when possible.
+  window.returnValueV25=function(r){
+    if(num(r.total)!==0) return num(r.total);
+    if(num(r.amount)!==0) return num(r.amount);
+    const sale=(db.sales||[]).find(s=>Number(s.id)===Number(r.saleId));
+    if(!sale) return 0;
+    const qty=num(r.qty)||num(r.quantity);
+    const unit = num(r.unitPrice) || (qty && num(sale.total)/qty) || 0;
+    return qty*unit;
+  };
+
+  window.cashSummaryV25=function(){
+    const sales=total(db.sales,'total');
+    const customerPayments=total(db.customerPayments,'amount');
+    const purchases=total(db.purchases,'total');
+    const supplierPayments=total(db.supplierPayments,'amount');
+    const expenses=total(db.expenses,'amount');
+    const returns=(db.returns||[]).reduce((a,r)=>a+window.returnValueV25(r),0);
+    return {
+      cashIn: customerPayments,
+      cashOut: supplierPayments+expenses,
+      receivables: sales - customerPayments - returns,
+      inventoryPurchases: purchases,
+      returns,
+      netCashMovement: customerPayments - supplierPayments - expenses
+    };
+  };
+
+  window.financeDashboardV25=function(){
+    const s=cashSummaryV25();
+    document.getElementById('main').innerHTML=
+      '<div class="section"><h2>📊 لوحة المعلومات</h2></div>'+
+      '<div class="grid">'+
+      '<div class="card metric"><span>التحصيل</span><b>'+money2(s.cashIn)+'</b></div>'+
+      '<div class="card metric"><span>المدفوع للموردين</span><b>'+money2(total(db.supplierPayments,'amount'))+'</b></div>'+
+      '<div class="card metric"><span>مصروفات المصنع</span><b>'+money2(total(db.expenses,'amount'))+'</b></div>'+
+      '<div class="card metric"><span>صافي حركة النقدية</span><b>'+money2(s.netCashMovement)+'</b></div>'+
+      '<div class="card metric"><span>المستحق من العملاء</span><b>'+money2(s.receivables)+'</b></div>'+
+      '<div class="card metric"><span>المشتريات (مخزون)</span><b>'+money2(s.inventoryPurchases)+'</b></div>'+
+      '</div>'+
+      '<div class="card"><b>تنبيه محاسبي</b><div class="muted">المشتريات تُعامل كمخزون، وليست مصروف تشغيل. الفاتورة ليست تحصيلًا إلا عند تسجيل دفعة.</div></div>';
+  };
+
+  // Add a visible dashboard entry if the bottom nav exists.
+  setTimeout(function(){
+    const nav=[...document.querySelectorAll('button,a')].find(el=>/الحسابات/.test(el.textContent||''));
+    if(nav && !document.getElementById('v25DashBtn')){
+      const b=document.createElement('button');
+      b.id='v25DashBtn'; b.className='secondary small'; b.textContent='📊 لوحة المعلومات';
+      b.onclick=financeDashboardV25;
+      nav.parentElement && nav.parentElement.appendChild(b);
+    }
+  },300);
+})();
+</script>
+
+
+<script>
+/* RETAG V26 — return accounting fix
+   Return is linked to a specific invoice and uses that invoice's sale price.
+   Customer balance = sales - payments - returns.
+*/
+(function(){
+  const N2=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
+  const escV=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const moneyV=v=>typeof money==='function'?money(N2(v)):N2(v).toLocaleString('ar-EG')+' ج';
+
+  function saleUnit(s){
+    return N2(s.unitPrice) || (N2(s.qty)>0 ? N2(s.total)/N2(s.qty) : 0);
+  }
+  function returnValue(r){
+    if(N2(r.total)>0) return N2(r.total);
+    const s=(db.sales||[]).find(x=>Number(x.id)===Number(r.saleId));
+    return s ? N2(r.qty)*saleUnit(s) : 0;
+  }
+  window.retagReturnValue=returnValue;
+
+  window.retagCustomerBalance=function(id){
+    const sold=(db.sales||[]).filter(s=>Number(s.customerId)===Number(id))
+      .reduce((a,s)=>a+N2(s.total),0);
+    const paid=(db.payments||[]).filter(p=>Number(p.customerId)===Number(id))
+      .reduce((a,p)=>a+N2(p.amount),0);
+    const returned=(db.returns||[]).filter(r=>Number(r.customerId)===Number(id))
+      .reduce((a,r)=>a+returnValue(r),0);
+    return sold-paid-returned;
+  };
+
+  // Replace the return dialog with invoice-linked selection.
+  window.ret=function(){
+    const cs=(db.customers||[]).map(c=>`<option value="${c.id}">${escV(c.name)}</option>`).join('');
+    modal('↩️ مرتجع',
+      `<div class="field"><label>العميل</label><select id="r_customer" onchange="retagRefreshReturnInvoices()">${cs}</select></div>
+       <div class="field"><label>الفاتورة الأصلية</label><select id="r_sale" onchange="retagRefreshReturnInvoices()"></select></div>
+       <div class="grid3"><div class="metric"><span>سعر القطعة بالفاتورة</span><b id="r_unit">0</b></div>
+       <div class="metric"><span>مباع بالفاتورة</span><b id="r_saleqty">0</b></div>
+       <div class="metric"><span>قيمة المرتجع</span><b id="r_total">0</b></div></div>
+       <div class="field"><label>الكمية المرتجعة</label><input id="r_qty" type="number" min="1" value="1" oninput="retagRefreshReturnInvoices()"></div>
+       <div id="r_warn" class="red"></div>
+       <button style="width:100%" onclick="saveReturn()">حفظ المرتجع</button>`);
+    retagRefreshReturnInvoices();
+  };
+
+  window.retagRefreshReturnInvoices=function(){
+    const cid=N2(document.getElementById('r_customer')?.value);
+    const sel=document.getElementById('r_sale');
+    if(!sel)return;
+    const sales=(db.sales||[]).filter(s=>Number(s.customerId)===cid);
+    const current=sel.value;
+    sel.innerHTML=sales.slice().reverse().map(s=>{
+      const m=(db.models||[]).find(x=>Number(x.id)===Number(s.modelId));
+      return `<option value="${s.id}">فاتورة #${s.id} — ${escV(m?.name||'موديل')} — ${N2(s.qty)} قطعة — ${moneyV(s.total)}</option>`;
+    }).join('');
+    if(current && [...sel.options].some(o=>o.value===current)) sel.value=current;
+    const sale=sales.find(s=>Number(s.id)===Number(sel.value));
+    const q=N2(document.getElementById('r_qty')?.value);
+    const unit=sale?saleUnit(sale):0;
+    const alreadyReturned=(db.returns||[]).filter(r=>Number(r.saleId)===Number(sale?.id))
+      .reduce((a,r)=>a+N2(r.qty),0);
+    const available=sale?Math.max(0,N2(sale.qty)-alreadyReturned):0;
+    const total=q*unit;
+    if(document.getElementById('r_unit'))document.getElementById('r_unit').textContent=moneyV(unit);
+    if(document.getElementById('r_saleqty'))document.getElementById('r_saleqty').textContent=available;
+    if(document.getElementById('r_total'))document.getElementById('r_total').textContent=moneyV(total);
+    if(document.getElementById('r_warn'))document.getElementById('r_warn').textContent=q>available?'⚠️ كمية المرتجع أكبر من المتبقي من الفاتورة':'';
+  };
+
+  window.saveReturn=function(){
+    const cid=N2(document.getElementById('r_customer')?.value);
+    const sid=N2(document.getElementById('r_sale')?.value);
+    const q=N2(document.getElementById('r_qty')?.value);
+    const sale=(db.sales||[]).find(s=>Number(s.id)===sid);
+    const model=sale&&(db.models||[]).find(x=>Number(x.id)===Number(sale.modelId));
+    if(!cid||!sale||!model||q<=0)return alert('اختر العميل والفاتورة وأدخل الكمية');
+    const already=(db.returns||[]).filter(r=>Number(r.saleId)===sid).reduce((a,r)=>a+N2(r.qty),0);
+    if(q>N2(sale.qty)-already)return alert('الكمية أكبر من المتبقي من الفاتورة');
+    const unit=saleUnit(sale), total=q*unit;
+    model.ready=N2(model.ready)+q;
+    model.sold=Math.max(0,N2(model.sold)-q);
+    model.returned=N2(model.returned)+q;
+    db.returns.push({
+      id:Date.now(), customerId:cid, modelId:model.id, saleId:sid,
+      qty:q, unitPrice:unit, total:total, date:new Date().toISOString()
+    });
+    save(); closeModal();
+    toast(`تم تسجيل المرتجع — ${moneyV(total)} خُصمت من حساب العميل`);
+    if(typeof render==='function')render();
+  };
+
+  // Override the existing customer balance/detail screens so returns are included.
+  window.customerBalance=function(id){return window.retagCustomerBalance(id);};
+
+  window.customerDetail=function(id){
+    const c=(db.customers||[]).find(z=>Number(z.id)===Number(id));
+    if(!c){show('customers');return;}
+    const sales=(db.sales||[]).filter(s=>Number(s.customerId)===Number(id));
+    const pays=(db.payments||[]).filter(p=>Number(p.customerId)===Number(id));
+    const rets=(db.returns||[]).filter(r=>Number(r.customerId)===Number(id));
+    const sold=sales.reduce((a,s)=>a+N2(s.total),0);
+    const paid=pays.reduce((a,p)=>a+N2(p.amount),0);
+    const returned=rets.reduce((a,r)=>a+returnValue(r),0);
+    const balance=sold-paid-returned;
+    const inv=sales.slice().reverse().map(s=>{
+      const mo=(db.models||[]).find(z=>Number(z.id)===Number(s.modelId));
+      return `<div class="item"><div><b>فاتورة #${s.id}</b><div class="muted">${escV(mo?.name||'موديل')} — ${N2(s.qty)} قطعة × ${moneyV(saleUnit(s))}</div></div><b>${moneyV(s.total)}</b></div>`;
+    }).join('')||'<div class="empty">لا توجد فواتير</div>';
+    const ph=pays.slice().reverse().map(p=>`<div class="item"><div><b>دفعة</b><div class="muted">${new Date(p.date||Date.now()).toLocaleDateString('ar-EG')}</div></div><b class="green">+${moneyV(p.amount)}</b></div>`).join('')||'<div class="empty">لا توجد دفعات</div>';
+    const rh=rets.slice().reverse().map(r=>`<div class="item"><div><b>↩️ مرتجع</b><div class="muted">فاتورة #${r.saleId||'—'} — ${N2(r.qty)} قطعة</div></div><b class="red">-${moneyV(returnValue(r))}</b></div>`).join('')||'<div class="empty">لا توجد مرتجعات</div>';
+    document.getElementById('main').innerHTML=
+      `<div class="section"><button class="back secondary small" onclick="show('customers')">رجوع</button><h2>${escV(c.name)}</h2></div>
+       <div class="card"><div class="grid3"><div class="metric"><span>ليا</span><b>${moneyV(balance)}</b></div><div class="metric"><span>المبيعات</span><b>${moneyV(sold)}</b></div><div class="metric"><span>الدفعات</span><b>${moneyV(paid)}</b></div></div>
+       <div class="grid3"><div class="metric"><span>قيمة المرتجعات</span><b>${moneyV(returned)}</b></div><div class="metric"><span>صافي المديونية</span><b>${moneyV(balance)}</b></div></div>
+       <div class="actions"><button onclick="customerPay(${c.id})">💵 تسجيل دفعة</button></div></div>
+       <div class="card"><div class="title">🧾 الفواتير</div>${inv}</div>
+       <div class="card"><div class="title">💵 دفعات العملاء</div>${ph}</div>
+       <div class="card"><div class="title">↩️ المرتجعات</div>${rh}</div>`;
+  };
+})();
+</script>
+
+
+<script>
+/* RETAG V27 — customer return accounting + accounts screen fix */
+(function(){
+  const num=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
+  const retVal=r=>{
+    if(num(r.total)>0)return num(r.total);
+    if(num(r.amount)>0)return num(r.amount);
+    const s=(db.sales||[]).find(x=>Number(x.id)===Number(r.saleId));
+    if(!s)return 0;
+    const unit=num(s.unitPrice)||(num(s.qty)?num(s.total)/num(s.qty):0);
+    return num(r.qty)*unit;
+  };
+  const customerRet=id=>(db.returns||[])
+    .filter(r=>Number(r.customerId)===Number(id))
+    .reduce((a,r)=>a+retVal(r),0);
+  const customerSold=id=>(db.sales||[])
+    .filter(s=>Number(s.customerId)===Number(id))
+    .reduce((a,s)=>a+num(s.total),0);
+  const customerPaid=id=>(db.payments||[])
+    .filter(p=>Number(p.customerId)===Number(id))
+    .reduce((a,p)=>a+num(p.amount),0);
+
+  window.retagCustomerBalance=function(id){
+    return customerSold(id)-customerPaid(id)-customerRet(id);
+  };
+
+  /* Customers list: show net receivable after returns. */
+  window.customers=function(m){
+    const rows=(db.customers||[]).map(c=>{
+      const sold=customerSold(c.id), paid=customerPaid(c.id), returned=customerRet(c.id);
+      const bal=sold-paid-returned;
+      return `<div class="card" onclick="customerDetail(${c.id})">
+        <div class="split"><div class="title">${typeof esc==='function'?esc(c.name):c.name}</div><b>${money(bal)}</b></div>
+        <div class="muted">مبيعات ${money(sold)} — دفعات ${money(paid)} — مرتجعات ${money(returned)}</div>
+        <div class="actions"><button class="secondary small" onclick="event.stopPropagation();customerPay(${c.id})">+ دفعة</button></div>
+      </div>`;
+    }).join('')||'<div class="card empty">أضف أول عميل</div>';
+    m.innerHTML=`<div class="section"><h2>👥 العملاء</h2><button onclick="add('customer')" class="small">+ إضافة عميل</button></div>${rows}`;
+  };
+
+  /* Accounts: receivables must be net of customer returns. */
+  window.accounts=function(m){
+    const sales=(db.sales||[]).reduce((a,s)=>a+num(s.total),0);
+    const payments=(db.payments||[]).reduce((a,p)=>a+num(p.amount),0);
+    const returns=(db.returns||[]).reduce((a,r)=>a+retVal(r),0);
+    const supplierDue=(db.purchases||[]).reduce((a,p)=>a+num(p.total),0)
+      -(db.supplierPayments||[]).reduce((a,p)=>a+num(p.amount),0);
+    const expenses=(db.expenses||[]).reduce((a,e)=>a+num(e.amount),0);
+    m.innerHTML=`
+      <div class="section"><h2>💰 الحسابات</h2></div>
+      <div class="grid">
+        <div class="card metric"><span>ليا — العملاء</span><b>${money(sales-payments-returns)}</b></div>
+        <div class="card metric"><span>عليا — الموردين</span><b>${money(supplierDue)}</b></div>
+        <div class="card metric"><span>المبيعات</span><b>${money(sales)}</b></div>
+        <div class="card metric"><span>التحصيل</span><b>${money(payments)}</b></div>
+        <div class="card metric"><span>مرتجعات العملاء</span><b>${money(returns)}</b></div>
+        <div class="card metric"><span>مصروفات المصنع</span><b>${money(expenses)}</b></div>
+      </div>
+      <div class="card">
+        <div class="title">📌 صافي مستحقات العملاء</div>
+        <div class="big">${money(sales-payments-returns)}</div>
+        <div class="muted">المبيعات − دفعات العملاء − قيمة المرتجعات</div>
+      </div>
+      <div class="card">
+        <div class="title">🧾 المشتريات — مخزون</div>
+        <div class="big">${money((db.purchases||[]).reduce((a,p)=>a+num(p.total),0))}</div>
+        <div class="muted">المشتريات تدخل المخزون ولا تُحسب كمصروف تشغيل.</div>
+        <button style="width:100%" onclick="show('purchaseHistory')">📋 عرض سجل المشتريات</button>
+      </div>`;
+  };
+
+  /* Payment dialog must also use the corrected balance. */
+  window.customerPay=function(id){
+    const c=(db.customers||[]).find(x=>Number(x.id)===Number(id));
+    if(!c)return;
+    const bal=window.retagCustomerBalance(id);
+    modal('💵 دفعة عميل — '+(typeof esc==='function'?esc(c.name):c.name),
+      `<div class="card"><div class="muted">الرصيد الحالي (ليا)</div><div class="big">${money(bal)}</div></div>
+       <div class="field"><label>مبلغ الدفعة</label><input id="cp_amt" type="number" min="0.01" step="0.01"></div>
+       <button style="width:100%" onclick="saveCustomerPayment(${id})">حفظ الدفعة</button>`);
+  };
+
+  window.saveCustomerPayment=function(id){
+    const amount=num(document.getElementById('cp_amt')?.value);
+    const bal=window.retagCustomerBalance(id);
+    if(amount<=0)return alert('اكتب مبلغ الدفعة');
+    if(amount>bal)return alert('الدفعة أكبر من الرصيد المستحق');
+    db.payments.push({id:Date.now(),customerId:Number(id),amount,date:new Date().toISOString()});
+    save();closeModal();toast('تم تسجيل دفعة العميل');customerDetail(id);
+  };
+})();
+</script>
+
+
+<script>
+/* RETAG V28 — purchase split (paid now / credit) + cash movement */
+(function(){
+  const num=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
+  const esc3=s=>typeof esc==='function'?esc(s):String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const money3=v=>typeof money==='function'?money(num(v)):num(v).toLocaleString('ar-EG')+' ج';
+  const sum=(arr,key)=> (arr||[]).reduce((a,x)=>a+num(x[key]),0);
+  const purchasePaid=p=>num(p.paidNow);
+  const purchaseCredit=p=>Math.max(0,num(p.total)-purchasePaid(p));
+
+  window.purchase=function(){
+    const matOpts=(db.materials||[]).map(x=>`<option value="${x.id}">${esc3(x.name)} ${x.color?'— '+esc3(x.color):''} — المخزون ${num(x.stock)} ${esc3(x.unit||'')}</option>`).join('');
+    const supOpts=(db.suppliers||[]).map(x=>`<option value="${x.id}">${esc3(x.name)}</option>`).join('');
+    modal('🛒 شراء خامة',
+      `<div class="field"><label>الصنف</label><div class="inlineadd"><div><select id="p_mat">${matOpts}</select></div><button class="secondary" onclick="quickAdd('material')">+ خامة</button></div></div>`+
+      `<div class="formrow"><div class="field"><label>الكمية</label><input id="p_qty" type="number" min="0" step="0.01"></div>`+
+      `<div class="field"><label>إجمالي الشراء</label><input id="p_total" type="number" min="0" step="0.01" oninput="purchaseDuePreview()"></div></div>`+
+      `<div class="field"><label>المدفوع الآن</label><input id="p_paid" type="number" min="0" step="0.01" value="0" oninput="purchaseDuePreview()"></div>`+
+      `<div class="card" style="margin:8px 0"><div class="split"><span>المتبقي آجل</span><b id="p_due_preview">0 ج</b></div><div class="muted">المدفوع الآن يخرج من النقدية، والمتبقي يصبح مستحقًا للمورد.</div></div>`+
+      `<div class="field"><label>المورد</label><div class="inlineadd"><div><select id="p_sup">${supOpts}</select></div><button class="secondary" onclick="quickAdd('supplier')">+ مورد</button></div></div>`+
+      `<button style="width:100%" onclick="savePurchase()">حفظ الشراء</button>`+
+      `<div style="margin-top:8px"><button class="secondary" style="width:100%" onclick="closeModal();show('purchasesHistory')">🧾 سجل المشتريات</button></div>`
+    );
+    setTimeout(window.purchaseDuePreview,0);
+  };
+
+  window.purchaseDuePreview=function(){
+    const total=num(document.getElementById('p_total')?.value);
+    const paid=num(document.getElementById('p_paid')?.value);
+    const el=document.getElementById('p_due_preview');
+    if(el) el.textContent=money3(Math.max(0,total-paid));
+  };
+
+  window.savePurchase=function(){
+    const matId=num(document.getElementById('p_mat')?.value);
+    const supId=num(document.getElementById('p_sup')?.value);
+    const mat=(db.materials||[]).find(x=>Number(x.id)===matId);
+    const sup=(db.suppliers||[]).find(x=>Number(x.id)===supId);
+    const qty=num(document.getElementById('p_qty')?.value);
+    const total=num(document.getElementById('p_total')?.value);
+    const paidNow=num(document.getElementById('p_paid')?.value);
+    if(!mat||qty<=0)return alert('اختر خامة وأدخل الكمية');
+    if(!sup)return alert('اختار المورد — الشراء لازم يرتبط بمورد');
+    if(total<=0)return alert('اكتب إجمالي شراء صحيح');
+    if(paidNow<0||paidNow>total)return alert('المدفوع الآن لا يمكن أن يكون أكبر من إجمالي الشراء');
+    mat.stock=num(mat.stock)+qty;
+    db.purchases.push({id:Date.now(),materialId:mat.id,qty,total,paidNow,supplierId:sup.id,date:new Date().toISOString()});
+    save();closeModal();toast('تم الشراء — المخزون زاد، والمدفوع خرج من النقدية');render();
+  };
+
+  function supplierDue(id){
+    const bought=(db.purchases||[]).filter(p=>Number(p.supplierId)===Number(id)).reduce((a,p)=>a+purchaseCredit(p),0);
+    const paid=sum((db.supplierPayments||[]).filter(p=>Number(p.supplierId)===Number(id)),'amount');
+    return Math.max(0,bought-paid);
+  }
+
+  window.saveSupplierPay=function(id){
+    const amount=num(document.getElementById('sp_amt')?.value);
+    const balance=supplierDue(id);
+    if(amount<=0)return alert('اكتب المبلغ');
+    if(amount>balance)return alert('دفعة المورد أكبر من المديونية الحالية');
+    db.supplierPayments.push({id:Date.now(),supplierId:Number(id),amount,date:new Date().toISOString()});
+    save();closeModal();toast('تم تسجيل دفعة المورد');render();
+  };
+
+  window.accounts=function(m){
+    const sales=sum(db.sales,'total');
+    const collections=sum(db.payments,'amount');
+    const returns=(db.returns||[]).reduce((a,r)=>{
+      if(num(r.total)>0)return a+num(r.total);
+      if(num(r.amount)>0)return a+num(r.amount);
+      const sale=(db.sales||[]).find(s=>Number(s.id)===Number(r.saleId));
+      const qty=num(r.qty)||num(r.quantity); const unit=sale?(num(sale.unitPrice)||(qty?num(sale.total)/qty:0)):0;
+      return a+qty*unit;
+    },0);
+    const purchases=sum(db.purchases,'total');
+    const purchasePaidNow=(db.purchases||[]).reduce((a,p)=>a+purchasePaid(p),0);
+    const supplierPayments=sum(db.supplierPayments,'amount');
+    const expenses=sum(db.expenses,'amount');
+    const supplierDue=Math.max(0,purchases-purchasePaidNow-supplierPayments);
+    const netCash=collections-purchasePaidNow-supplierPayments-expenses;
+    m.innerHTML=`
+      <div class="section"><h2>💰 الحسابات</h2></div>
+      <div class="grid">
+        <div class="card metric"><span>ليا — العملاء</span><b>${money3(sales-collections-returns)}</b></div>
+        <div class="card metric"><span>عليا — الموردين</span><b>${money3(supplierDue)}</b></div>
+        <div class="card metric"><span>المبيعات</span><b>${money3(sales)}</b></div>
+        <div class="card metric"><span>التحصيل</span><b>${money3(collections)}</b></div>
+        <div class="card metric"><span>مرتجعات العملاء</span><b>${money3(returns)}</b></div>
+        <div class="card metric"><span>مصروفات المصنع</span><b>${money3(expenses)}</b></div>
+      </div>
+      <div class="card">
+        <div class="title">💵 صافي حركة النقدية</div>
+        <div class="big">${money3(netCash)}</div>
+        <div class="muted">منذ بداية التسجيل = تحصيل العملاء − المدفوع نقدًا في المشتريات − دفعات الموردين − المصروفات.</div>
+      </div>
+      <div class="grid">
+        <div class="card metric"><span>المشتريات — مخزون</span><b>${money3(purchases)}</b></div>
+        <div class="card metric"><span>المدفوع نقدًا في المشتريات</span><b>${money3(purchasePaidNow)}</b></div>
+      </div>
+      <div class="card">
+        <div class="title">📌 صافي مستحقات العملاء</div>
+        <div class="big">${money3(sales-collections-returns)}</div>
+        <div class="muted">المبيعات − دفعات العملاء − قيمة المرتجعات</div>
+      </div>
+      <div class="card">
+        <div class="title">🧾 المشتريات — مخزون</div>
+        <div class="big">${money3(purchases)}</div>
+        <div class="muted">المشتريات تدخل المخزون ولا تُحسب كمصروف تشغيل. كل شراء جديد يحدد المدفوع الآن والباقي آجل.</div>
+        <button style="width:100%" onclick="show('purchaseHistory')">📋 عرض سجل المشتريات</button>
+      </div>`;
+  };
+})();
+</script>
+
+
+
+<script>
+/* RETAG V29 — costing + decision analytics (additive layer)
+   IMPORTANT: This layer does not replace the existing purchase/sales/cut/return/finance logic.
+   It adds cost snapshots and analysis on top of the working V28 flow.
+
+   Cost rules:
+   1) Variable cost = actual material consumed in each cut × material purchase cost at that time.
+   2) Actual meters/material per piece = actual material input ÷ actual cut output.
+   3) Fixed allocation = configurable per-piece factory/model costs (labor/overhead/etc.).
+   4) Official selling price remains independent from cost.
+   5) Historical cuts/sales keep their cost snapshot once available; older records are analyzed
+      conservatively without rewriting their original operational data.
+*/
+(function(){
+  const N=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
+  const M=v=>typeof money==='function'?money(N(v)):N(v).toLocaleString('ar-EG')+' ج';
+  const E=s=>typeof esc==='function'?esc(s):String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const sum=(arr,fn)=> (arr||[]).reduce((a,x)=>a+N(fn?fn(x):x),0);
+  const today=()=>new Date().toISOString();
+
+  // ---------- Non-destructive normalization ----------
+  (db.models||[]).forEach(x=>{
+    if(!Array.isArray(x.fixedCosts)) x.fixedCosts=[];
+    x.fixedCostPerPiece=N(x.fixedCostPerPiece);
+  });
+  (db.cuts||[]).forEach(c=>{
+    if(Array.isArray(c.materials)) c.materials.forEach(a=>{a.qty=N(a.qty);a.materialId=N(a.materialId)});
+  });
+
+  // ---------- Purchase price history ----------
+  function purchaseUnitCostAt(materialId, atDate){
+    const t=atDate?new Date(atDate).getTime():Infinity;
+    const ps=(db.purchases||[]).filter(p=>Number(p.materialId)===Number(materialId))
+      .filter(p=>!p.date || new Date(p.date).getTime()<=t)
+      .filter(p=>N(p.qty)>0 && N(p.total)>0)
+      .sort((a,b)=>new Date(a.date||0)-new Date(b.date||0));
+    if(!ps.length) return 0;
+    // Weighted-average purchase cost as the safest cost basis without inventory lots.
+    const qty=sum(ps,p=>p.qty), total=sum(ps,p=>p.total);
+    return qty>0?total/qty:0;
+  }
+  window.retagPurchaseUnitCostAt=purchaseUnitCostAt;
+
+  // ---------- Fixed cost setup ----------
+  function fixedCostTotalPerPiece(model){
+    if(!model) return 0;
+    if(Array.isArray(model.fixedCosts) && model.fixedCosts.length)
+      return sum(model.fixedCosts,c=>c.perPiece);
+    return N(model.fixedCostPerPiece);
+  }
+  window.retagFixedCostPerPiece=fixedCostTotalPerPiece;
+
+  window.editModelFixedCosts=function(id){
+    const x=(db.models||[]).find(z=>Number(z.id)===Number(id));
+    if(!x)return;
+    const rows=Array.isArray(x.fixedCosts)?x.fixedCosts:[];
+    const body=rows.map((r,i)=>`<div class="field cost-row" data-i="${i}"><label>بند التكلفة</label><input class="fc-name" value="${E(r.name||'')}" placeholder="عمالة / كهرباء / إيجار / أخرى"><label style="margin-top:6px">تكلفة البند للقطعة</label><input class="fc-val" type="number" min="0" step="0.01" value="${N(r.perPiece)}"></div>`).join('');
+    modal('⚙️ التكاليف الثابتة للقطعة',
+      `<div class="muted">دي تكلفة تقديرية تُحمّل على القطعة لأغراض حساب تكلفة الموديل والربحية. المصروفات الفعلية تظل في شاشة المصروفات منفصلة.</div>
+       <div id="fixedCostRows">${body||'<div class="empty">لم تتم إضافة بنود بعد.</div>'}</div>
+       <button class="secondary" style="width:100%;margin-top:8px" onclick="retagAddFixedCostRow()">+ بند تكلفة</button>
+       <div class="card" style="margin-top:10px"><div class="split"><span>إجمالي الثابت/قطعة</span><b id="fixedCostPreview">${M(fixedCostTotalPerPiece(x))}</b></div></div>
+       <button style="width:100%" onclick="saveModelFixedCosts(${id})">حفظ التكاليف</button>`);
+    setTimeout(()=>retagRefreshFixedCostPreview(),0);
+  };
+  window.retagAddFixedCostRow=function(){
+    const wrap=document.getElementById('fixedCostRows');
+    if(!wrap)return;
+    if(wrap.querySelector('.empty'))wrap.innerHTML='';
+    wrap.insertAdjacentHTML('beforeend',`<div class="field cost-row"><label>بند التكلفة</label><input class="fc-name" placeholder="عمالة / كهرباء / إيجار / أخرى"><label style="margin-top:6px">تكلفة البند للقطعة</label><input class="fc-val" type="number" min="0" step="0.01" value="0"></div>`);
+    retagRefreshFixedCostPreview();
+  };
+  window.retagRefreshFixedCostPreview=function(){
+    const total=[...document.querySelectorAll('#fixedCostRows .fc-val')].reduce((a,e)=>a+N(e.value),0);
+    const el=document.getElementById('fixedCostPreview');if(el)el.textContent=M(total);
+  };
+  window.saveModelFixedCosts=function(id){
+    const x=(db.models||[]).find(z=>Number(z.id)===Number(id));if(!x)return;
+    const rows=[...document.querySelectorAll('#fixedCostRows .cost-row')].map(r=>({
+      name:r.querySelector('.fc-name')?.value?.trim()||'تكلفة أخرى',
+      perPiece:N(r.querySelector('.fc-val')?.value)
+    })).filter(r=>r.perPiece>0);
+    x.fixedCosts=rows;
+    x.fixedCostPerPiece=sum(rows,r=>r.perPiece);
+    x.fixedCostUpdatedAt=today();
+    save();closeModal();toast('تم حفظ التكاليف الثابتة للموديل');render();
+  };
+
+  // ---------- Cut costing ----------
+  function cutMaterials(c){
+    return Array.isArray(c?.materials)&&c.materials.length
+      ? c.materials.map(a=>({materialId:N(a.materialId),qty:N(a.qty)})).filter(a=>a.materialId&&a.qty>0)
+      : (c&&N(c.materialId)&&N(c.fabricQty)>0?[{materialId:N(c.materialId),qty:N(c.fabricQty)}]:[]);
+  }
+
+  function buildCutCostSnapshot(c){
+    const at=c?.start||c?.end||today();
+    const mats=cutMaterials(c);
+    const items=mats.map(a=>{
+      const m=(db.materials||[]).find(x=>Number(x.id)===Number(a.materialId));
+      const unitCost=purchaseUnitCostAt(a.materialId,at);
+      return {materialId:a.materialId,materialName:m?.name||'خامة',color:m?.color||'',qty:a.qty,unitCost,total:a.qty*unitCost,unit:m?.unit||'وحدة'};
+    });
+    const variableCost=sum(items,i=>i.total);
+    const pieces=N(c?.piecesProduced||c?.pieces);
+    const variablePerPiece=pieces>0?variableCost/pieces:0;
+    return {at,items,variableCost,pieces,variablePerPiece,method:'weighted_average_purchase_price'};
+  }
+
+  function ensureCutSnapshot(c){
+    if(c.costSnapshot && Array.isArray(c.costSnapshot.items)) return c.costSnapshot;
+    return buildCutCostSnapshot(c);
+  }
+  window.retagCutCost=ensureCutSnapshot;
+
+  // ---------- Model-level production cost analysis ----------
+  function modelCostStats(modelId){
+    const x=(db.models||[]).find(z=>Number(z.id)===Number(modelId));
+    if(!x)return null;
+    const cuts=(db.cuts||[]).filter(c=>Number(c.modelId)===Number(modelId));
+    let produced=0, variableCost=0, materialTotals={};
+    cuts.forEach(c=>{
+      const snap=ensureCutSnapshot(c);
+      produced+=N(snap.pieces);
+      variableCost+=N(snap.variableCost);
+      (snap.items||[]).forEach(i=>{
+        const key=String(i.materialId);
+        if(!materialTotals[key])materialTotals[key]={materialId:i.materialId,name:i.materialName,color:i.color,unit:i.unit,qty:0,cost:0};
+        materialTotals[key].qty+=N(i.qty);
+        materialTotals[key].cost+=N(i.total);
+      });
+    });
+    // Use the fixed-cost snapshot stored on each cut. This prevents a later change
+    // to the model's fixed-cost setup from rewriting historical production cost.
+    let fixedCost=0, fixedAllocatedPieces=0;
+    cuts.forEach(c=>{
+      const pieces=N(c?.piecesProduced||c?.pieces);
+      const f=N(c?.fixedCostPerPieceAtCut);
+      if(pieces>0 && f>0){ fixedCost += pieces*f; fixedAllocatedPieces += pieces; }
+    });
+    const fixedPerPiece=produced>0
+      ? (fixedCost>0 ? fixedCost/produced : fixedCostTotalPerPiece(x))
+      : fixedCostTotalPerPiece(x);
+    if(fixedCost===0 && produced>0) fixedCost=produced*fixedPerPiece;
+    const totalProductionCost=variableCost+fixedCost;
+    const costPerProduced=produced>0?totalProductionCost/produced:0;
+    const soldQty=N(x.sold), returnedQty=N(x.returned);
+    const netSoldQty=Math.max(0,soldQty-returnedQty);
+    const sales=(db.sales||[]).filter(s=>Number(s.modelId)===Number(modelId));
+    const returns=(db.returns||[]).filter(r=>Number(r.modelId)===Number(modelId));
+    const revenue=sum(sales,s=>s.total)-sum(returns,r=>returnValue(r));
+    const cogs=Math.min(netSoldQty,produced)*costPerProduced;
+    const profit=revenue-cogs;
+    const avgMaterialPerPiece={};
+    Object.values(materialTotals).forEach(i=>{avgMaterialPerPiece[i.materialId]=produced>0?i.qty/produced:0;});
+    return {model:x,produced,variableCost,fixedPerPiece,fixedCost,totalProductionCost,costPerProduced,soldQty,returnedQty,netSoldQty,revenue,cogs,profit,materialTotals:Object.values(materialTotals),avgMaterialPerPiece};
+  }
+  window.retagModelCostStats=modelCostStats;
+
+  function saleUnitPrice(s){return N(s.unitPrice)||(N(s.qty)>0?N(s.total)/N(s.qty):0)}
+  function returnValue(r){
+    if(N(r.total)>0)return N(r.total);
+    const s=(db.sales||[]).find(x=>Number(x.id)===Number(r.saleId));
+    return s?N(r.qty)*saleUnitPrice(s):0;
+  }
+
+  // ---------- Average actual consumption ----------
+  function modelMaterialRows(stats){
+    return (stats?.materialTotals||[]).map(i=>{
+      const avg=stats.produced>0?i.qty/stats.produced:0;
+      const unitCost=i.cost>0&&i.qty>0?i.cost/i.qty:0;
+      return {name:i.name,color:i.color,unit:i.unit,totalQty:i.qty,avgPerPiece:avg,unitCost,totalCost:i.cost};
+    });
+  }
+
+  // ---------- Non-destructive sale cost snapshot for NEW sales ----------
+  const oldSaveSale=window.saveSale;
+  const oldSaveCutFinish=window.saveCutFinish;
+  if(typeof oldSaveSale==='function'){
+    window.saveSale=function(){
+      const modelId=N(document.getElementById('s_model')?.value);
+      const before=(db.sales||[]).length;
+      oldSaveSale();
+      if((db.sales||[]).length>before){
+        const s=db.sales[db.sales.length-1];
+        if(!s.costPerPiece){
+          const stats=modelCostStats(modelId);
+          s.costPerPiece=stats?.costPerProduced||0;
+          s.costTotal=N(s.qty)*N(s.costPerPiece);
+          s.costSnapshotDate=today();
+          save();
+        }
+      }
+    };
+  }
+
+  // Snapshot cost inputs when a NEW cut is finished. Existing operational logic runs first,
+  // then we only add metadata; no stock/production/accounting numbers are changed here.
+  if(typeof oldSaveCutFinish==='function'){
+    window.saveCutFinish=function(cutId){
+      const before=(db.cuts||[]).find(c=>Number(c.id)===Number(cutId));
+      oldSaveCutFinish(cutId);
+      const c=(db.cuts||[]).find(x=>Number(x.id)===Number(cutId));
+      if(c && c.piecesProduced>0 && !c.costSnapshot){
+        c.costSnapshot=buildCutCostSnapshot(c);
+        const model=(db.models||[]).find(x=>Number(x.id)===Number(c.modelId));
+        c.fixedCostPerPieceAtCut=fixedCostTotalPerPiece(model);
+        c.costSnapshot.fixedCostPerPieceAtCut=c.fixedCostPerPieceAtCut;
+        c.costSnapshot.totalCost=c.costSnapshot.variableCost + c.piecesProduced*c.fixedCostPerPieceAtCut;
+        c.costSnapshot.costPerPiece=c.piecesProduced>0?c.costSnapshot.totalCost/c.piecesProduced:0;
+        c.costSnapshotDate=today();
+        save();
+      }
+    };
+  }
+
+  // ---------- Model detail: keep V28 flow, add analysis below it ----------
+  const oldModelDetail=window.modelDetail;
+  window.modelDetail=function(m){
+    oldModelDetail(m);
+    const x=(db.models||[]).find(z=>Number(z.id)===Number(activeModel));
+    if(!x)return;
+    const stats=modelCostStats(x.id);
+    const existing=m.innerHTML;
+    const materialRows=modelMaterialRows(stats);
+    const cutRows=(db.cuts||[]).filter(c=>Number(c.modelId)===Number(x.id)).slice().reverse().map(c=>{
+      const snap=ensureCutSnapshot(c);
+      const pieces=N(snap.pieces), varCost=N(snap.variableCost), varPP=N(snap.variablePerPiece);
+      return `<div class="item"><div><b>قصّة #${c.id}</b><div class="muted">${pieces} قطعة — خامات ${M(varCost)}</div></div><b>${pieces?M(varPP)+'/قطعة':'—'}</b></div>`;
+    }).join('')||'<div class="empty">لا توجد قصّات حتى الآن</div>';
+    const materialHtml=materialRows.map(r=>`<div class="item"><div><b>${E(r.name)}${r.color?' — '+E(r.color):''}</b><div class="muted">إجمالي ${N(r.totalQty)} ${E(r.unit)} — متوسط ${N(r.avgPerPiece).toFixed(3)} ${E(r.unit)}/قطعة</div></div><b>${M(r.unitCost)} / ${E(r.unit)}</b></div>`).join('')||'<div class="empty">لا توجد بيانات استهلاك فعلية بعد</div>';
+    const analysis=`
+      <div class="section"><h2>📊 تحليل التكلفة والبيانات</h2></div>
+      <div class="card">
+        <div class="grid3">
+          <div class="metric"><span>إجمالي الإنتاج</span><b>${N(stats.produced)}</b></div>
+          <div class="metric"><span>إجمالي التكلفة</span><b>${M(stats.totalProductionCost)}</b></div>
+          <div class="metric"><span>تكلفة القطعة</span><b>${M(stats.costPerProduced)}</b></div>
+          <div class="metric"><span>المباع</span><b>${N(stats.soldQty)}</b></div>
+          <div class="metric"><span>المرتجع</span><b>${N(stats.returnedQty)}</b></div>
+          <div class="metric"><span>صافي المبيعات</span><b>${M(stats.revenue)}</b></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="split"><div><div class="title">⚙️ التكلفة الثابتة/قطعة</div><div class="big">${M(stats.fixedPerPiece)}</div></div><button class="secondary small" onclick="editModelFixedCosts(${x.id})">تعديل</button></div>
+        <div class="muted" style="margin-top:7px">تشمل البنود التي تحددها للموديل مثل العمالة والتحميل التقديري للكهرباء/الإيجار وغيرها. لا تغيّر مصروفات المصنع المسجلة.</div>
+      </div>
+      <div class="card"><div class="title">🧵 الاستهلاك الفعلي للخامات</div>${materialHtml}</div>
+      <div class="card"><div class="title">✂️ تكلفة القصّات الفعلية</div>${cutRows}</div>
+      <div class="card">
+        <div class="title">💰 الربحية الحالية للموديل</div>
+        <div class="grid3">
+          <div class="metric"><span>الإيراد الصافي</span><b>${M(stats.revenue)}</b></div>
+          <div class="metric"><span>تكلفة المباع</span><b>${M(stats.cogs)}</b></div>
+          <div class="metric"><span>الربح/الخسارة</span><b>${M(stats.profit)}</b></div>
+        </div>
+        <div class="muted" style="margin-top:8px">الربح هنا = صافي المبيعات − تكلفة القطع المباعة. المصروفات الفعلية العامة ما زالت تظهر منفصلة في الحسابات.</div>
+      </div>`;
+    m.innerHTML=existing+analysis;
+  };
+
+  // ---------- Add a decision-analysis screen without changing existing screens ----------
+  window.modelAnalytics=function(id){
+    const x=(db.models||[]).find(z=>Number(z.id)===Number(id));
+    if(!x)return;
+    const s=modelCostStats(id), mats=modelMaterialRows(s);
+    const rows=mats.map(r=>`<div class="item"><div><b>${E(r.name)}${r.color?' — '+E(r.color):''}</b><div class="muted">متوسط فعلي ${N(r.avgPerPiece).toFixed(3)} ${E(r.unit)}/قطعة · سعر ${M(r.unitCost)}/${E(r.unit)}</div></div><b>${M(r.avgPerPiece*r.unitCost)}/قطعة</b></div>`).join('')||'<div class="empty">لا توجد بيانات كافية للتحليل</div>';
+    document.getElementById('main').innerHTML=`<div class="section"><button class="back secondary small" onclick="openModel(${x.id})">رجوع</button><h2>📊 تحليل ${E(x.name)}</h2></div>
+      <div class="card"><div class="grid3"><div class="metric"><span>الإنتاج</span><b>${s.produced}</b></div><div class="metric"><span>تكلفة القطعة</span><b>${M(s.costPerProduced)}</b></div><div class="metric"><span>صافي الإيراد</span><b>${M(s.revenue)}</b></div><div class="metric"><span>تكلفة المباع</span><b>${M(s.cogs)}</b></div><div class="metric"><span>الربح</span><b>${M(s.profit)}</b></div><div class="metric"><span>هامش الربح</span><b>${s.revenue>0?((s.profit/s.revenue)*100).toFixed(1):'0'}%</b></div></div></div>
+      <div class="card"><div class="title">🧵 متوسط استهلاك كل خامة/قطعة</div>${rows}</div>
+      <div class="card"><div class="title">📌 قاعدة الحساب</div><div class="muted">المتغير = الاستهلاك الفعلي في القصّة × تكلفة شراء الخامة وقت القص. الثابت = البنود الثابتة التي تحددها للقطعة.</div></div>`;
+  };
+
+  // Put a clear analysis button into the current model page, without altering its existing actions.
+  const oldModelDetail2=window.modelDetail;
+  window.modelDetail=function(m){
+    oldModelDetail2(m);
+    const x=(db.models||[]).find(z=>Number(z.id)===Number(activeModel));if(!x)return;
+    const headings=[...m.querySelectorAll('.section h2')];
+    const target=headings.find(h=>/تحليل التكلفة/.test(h.textContent||''));
+    if(target){
+      const sec=target.parentElement;
+      const b=document.createElement('button');b.className='small secondary';b.textContent='📊 فتح التحليل الكامل';b.onclick=()=>modelAnalytics(x.id);sec.appendChild(b);
+    }
+  };
+
+  // Small dashboard decision block: no new navigation dependency.
+  const oldHome=window.home;
+  if(typeof oldHome==='function'){
+    window.home=function(m){
+      oldHome(m);
+      const stats=(db.models||[]).map(x=>modelCostStats(x.id)).filter(Boolean).filter(s=>s.produced>0);
+      if(!stats.length)return;
+      const top=stats.slice().sort((a,b)=>b.profit-a.profit)[0];
+      const block=document.createElement('div');block.className='card';
+      block.innerHTML=`<div class="title">📊 قرار سريع من البيانات</div><div class="muted">أعلى ربح حاليًا: <b>${E(top.model.name)}</b> · تكلفة القطعة ${M(top.costPerProduced)} · الربح ${M(top.profit)}</div><button class="secondary small" style="margin-top:8px" onclick="modelAnalytics(${top.model.id})">فتح التحليل</button>`;
+      m.appendChild(block);
+    };
+  }
+
+  // Persist only the harmless normalization fields once.
+  save();
+})();
+</script>
+
+</body>
+</html>
+<script>
+/* RETAG V30 — TEST RESET
+   Reset transactions and derived quantities only; preserve master data.
+   Master data preserved: materials, suppliers, customers, models, official prices,
+   recipes and fixed-cost settings.
+*/
+(function(){
+  const transactionKeys=['purchases','cuts','sales','payments','supplierPayments','returns','expenses','requests'];
+  window.resetDemo=function(){
+    if(!confirm('تصفير الحركات والأرقام فقط؟\nسيتم الاحتفاظ بالخامات والموردين والعملاء والموديلات والأسعار والتكلفة.')) return;
+
+    // Remove all transactional history.
+    transactionKeys.forEach(k=>{ db[k]=[]; });
+
+    // Reset only derived/operational quantities on materials.
+    (db.materials||[]).forEach(m=>{
+      m.stock=0;
+    });
+
+    // Reset only derived/operational quantities on models.
+    // Keep name, price, note, recipe, fixedCosts and all master settings.
+    (db.models||[]).forEach(m=>{
+      m.ready=0;
+      m.inProgress=0;
+      m.required=0;
+      m.produced=0;
+      m.sold=0;
+      m.returned=0;
+    });
+
+    save();
+    render();
+    toast('تم التصفير — البيانات الأساسية محفوظة');
+  };
+})();
+</script>
