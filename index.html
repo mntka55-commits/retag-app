@@ -1826,113 +1826,7 @@ function recipeAdd(id){
 
 
 
-<script>
-/* RETAG V40 — STRUCTURAL CLEANUP + COMPLETED CUT FIX
-   Purpose: one clean binding for completed cuts and a documented audit of the
-   accumulated prototype layers. Business formulas are preserved unless listed
-   as a confirmed structural defect.
-*/
-(function(){
-  const N=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
-  const arr=k=>Array.isArray(db[k])?db[k]:[];
 
-  // Developer audit trail: visible from the console, not part of user data.
-  window.RETAG_AUDIT_LOG={
-    version:'V40',
-    cleaned:[
-      'Removed two obsolete scripts with JavaScript syntax errors (V24/V25 layers).',
-      'Removed accumulated V34/V35/V37/V38/V39 completed-cut click binders.',
-      'Kept supplier detail, supplier balance, cancellation, normalization and read-only cut data logic.',
-      'Established one final completed-cut click target after the final model renderer.',
-      'Completed cut is read-only: no action buttons and no accounting/stock mutation.'
-    ],
-    verifiedRules:[
-      'Supplier due = purchases - paid at purchase - later supplier payments.',
-      'Customer receivable = active sales - valid customer payments - return value.',
-      'Net cash = collections - purchase-time cash - later supplier payments - expenses - cash refunds.',
-      'Material purchases increase stock and are not operating expenses.',
-      'Return value uses the original sale price and also returns quantity to ready stock.',
-      'Invoice cancellation reverses stock/sales effects; canceled invoice quantity does not restore customer demand.',
-      'Cut start deducts actual material immediately; piece count is entered only at cut finish.',
-      'Actual material consumption per piece = actual material input / actual pieces produced.',
-      'Official model price is independent from invoice-specific price.',
-      'Accessory cost is manually fixed per piece until the owner changes it.'
-    ],
-    reviewedButDeferred:[
-      'Multi-model invoice: current prototype stores one model per sales record; implementing multiple models in one invoice requires an invoice-header/line-item decision so payments, returns and cancellation remain unambiguous.',
-      'Material cost basis: current analytics uses weighted-average purchase cost up to cut date because inventory lots are not implemented; this is an accounting-method choice, not silently changed in V40.'
-    ]
-  };
-
-  function findCompletedCutCard(card, modelId){
-    const tag=[...card.querySelectorAll(':scope > .split .tag')].find(t=>(t.textContent||'').trim()==='مكتملة');
-    if(!tag)return null;
-    const title=card.querySelector(':scope > .split b');
-    const txt=(title?.textContent||card.textContent||'');
-    const mm=txt.match(/قصّة\s*رقم\s*(\d+)/);
-    const seq=mm?Number(mm[1]):0;
-    const cuts=arr('cuts').filter(c=>Number(c.modelId)===Number(modelId)&&c.status==='مكتملة');
-    if(seq>0){
-      const bySeq=cuts.find(c=>N(c.sequence||c.cutNo)===seq);
-      if(bySeq)return bySeq;
-    }
-    const idm=txt.match(/قصّة\s*#\s*(\d+)/);
-    if(idm)return cuts.find(c=>N(c.id)===N(idm[1]))||null;
-    return null;
-  }
-
-  function bindCompletedCutCardsFinal(){
-    const main=document.getElementById('main');
-    if(!main || typeof window.cutReadOnly!=='function')return;
-    const modelId=N(window.activeModel);
-    if(!modelId)return;
-    main.querySelectorAll('.card').forEach(card=>{
-      const cut=findCompletedCutCard(card,modelId);
-      if(!cut)return;
-      if(card.dataset.v40CompletedCutId===String(cut.id))return;
-      card.dataset.v40CompletedCutId=String(cut.id);
-      card.style.cursor='pointer';
-      card.style.touchAction='manipulation';
-      card.style.webkitUserSelect='none';
-      card.style.userSelect='none';
-      card.setAttribute('role','button');
-      card.setAttribute('tabindex','0');
-      card.title='عرض بيانات القصّة فقط';
-      const actions=card.querySelector(':scope > .actions');
-      if(actions)actions.innerHTML='<span class="muted">📋 عرض بيانات القصّة فقط</span>';
-      card.onclick=function(e){
-        if(e.target.closest?.('button,a,input,select,textarea'))return;
-        e.preventDefault();e.stopPropagation();
-        window.cutReadOnly(cut.id);
-      };
-      card.onkeydown=function(e){
-        if((e.key==='Enter'||e.key===' ')&&!e.target.closest?.('button,a,input,select,textarea')){
-          e.preventDefault();window.cutReadOnly(cut.id);
-        }
-      };
-    });
-  }
-
-  // One wrapper only. No document-level touch listener and no duplicate modelDetail wrappers.
-  const baseModelDetail=window.modelDetail;
-  if(typeof baseModelDetail==='function'){
-    window.modelDetail=function(m){
-      baseModelDetail(m);
-      bindCompletedCutCardsFinal();
-      setTimeout(bindCompletedCutCardsFinal,0);
-    };
-  }
-  const baseRender=window.render;
-  if(typeof baseRender==='function'){
-    window.render=function(){
-      const r=baseRender.apply(this,arguments);
-      setTimeout(bindCompletedCutCardsFinal,0);
-      return r;
-    };
-  }
-  window.retagBindCompletedCuts=bindCompletedCutCardsFinal;
-})();
-</script>
 </body>
 
 <script>
@@ -2174,6 +2068,116 @@ function recipeAdd(id){
 
 </script>
 
+
+
+
+<script>
+/* RETAG V40 — STRUCTURAL CLEANUP + COMPLETED CUT FIX
+   Purpose: one clean binding for completed cuts and a documented audit of the
+   accumulated prototype layers. Business formulas are preserved unless listed
+   as a confirmed structural defect.
+*/
+(function(){
+  const N=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
+  const arr=k=>Array.isArray(db[k])?db[k]:[];
+
+  // Developer audit trail: visible from the console, not part of user data.
+  window.RETAG_AUDIT_LOG={
+    version:'V40',
+    cleaned:[
+      'Removed two obsolete scripts with JavaScript syntax errors (V24/V25 layers).',
+      'Removed accumulated V34/V35/V37/V38/V39 completed-cut click binders.',
+      'Kept supplier detail, supplier balance, cancellation, normalization and read-only cut data logic.',
+      'Established one final completed-cut click target after the final model renderer.',
+      'Completed cut is read-only: no action buttons and no accounting/stock mutation.'
+    ],
+    verifiedRules:[
+      'Supplier due = purchases - paid at purchase - later supplier payments.',
+      'Customer receivable = active sales - valid customer payments - return value.',
+      'Net cash = collections - purchase-time cash - later supplier payments - expenses - cash refunds.',
+      'Material purchases increase stock and are not operating expenses.',
+      'Return value uses the original sale price and also returns quantity to ready stock.',
+      'Invoice cancellation reverses stock/sales effects; canceled invoice quantity does not restore customer demand.',
+      'Cut start deducts actual material immediately; piece count is entered only at cut finish.',
+      'Actual material consumption per piece = actual material input / actual pieces produced.',
+      'Official model price is independent from invoice-specific price.',
+      'Accessory cost is manually fixed per piece until the owner changes it.'
+    ],
+    reviewedButDeferred:[
+      'Multi-model invoice: current prototype stores one model per sales record; implementing multiple models in one invoice requires an invoice-header/line-item decision so payments, returns and cancellation remain unambiguous.',
+      'Material cost basis: current analytics uses weighted-average purchase cost up to cut date because inventory lots are not implemented; this is an accounting-method choice, not silently changed in V40.'
+    ]
+  };
+
+  function findCompletedCutCard(card, modelId){
+    const tag=[...card.querySelectorAll(':scope > .split .tag')].find(t=>(t.textContent||'').trim()==='مكتملة');
+    if(!tag)return null;
+    const title=card.querySelector(':scope > .split b');
+    const txt=(title?.textContent||card.textContent||'');
+    const mm=txt.match(/قصّة\s*رقم\s*(\d+)/);
+    const seq=mm?Number(mm[1]):0;
+    const cuts=arr('cuts').filter(c=>Number(c.modelId)===Number(modelId)&&c.status==='مكتملة');
+    if(seq>0){
+      const bySeq=cuts.find(c=>N(c.sequence||c.cutNo)===seq);
+      if(bySeq)return bySeq;
+    }
+    const idm=txt.match(/قصّة\s*#\s*(\d+)/);
+    if(idm)return cuts.find(c=>N(c.id)===N(idm[1]))||null;
+    return null;
+  }
+
+  function bindCompletedCutCardsFinal(){
+    const main=document.getElementById('main');
+    if(!main || typeof window.cutReadOnly!=='function')return;
+    const modelId=N(window.activeModel);
+    if(!modelId)return;
+    main.querySelectorAll('.card').forEach(card=>{
+      const cut=findCompletedCutCard(card,modelId);
+      if(!cut)return;
+      if(card.dataset.v40CompletedCutId===String(cut.id))return;
+      card.dataset.v40CompletedCutId=String(cut.id);
+      card.style.cursor='pointer';
+      card.style.touchAction='manipulation';
+      card.style.webkitUserSelect='none';
+      card.style.userSelect='none';
+      card.setAttribute('role','button');
+      card.setAttribute('tabindex','0');
+      card.title='عرض بيانات القصّة فقط';
+      const actions=card.querySelector(':scope > .actions');
+      if(actions)actions.innerHTML='<span class="muted">📋 عرض بيانات القصّة فقط</span>';
+      card.onclick=function(e){
+        if(e.target.closest?.('button,a,input,select,textarea'))return;
+        e.preventDefault();e.stopPropagation();
+        window.cutReadOnly(cut.id);
+      };
+      card.onkeydown=function(e){
+        if((e.key==='Enter'||e.key===' ')&&!e.target.closest?.('button,a,input,select,textarea')){
+          e.preventDefault();window.cutReadOnly(cut.id);
+        }
+      };
+    });
+  }
+
+  // One wrapper only. No document-level touch listener and no duplicate modelDetail wrappers.
+  const baseModelDetail=window.modelDetail;
+  if(typeof baseModelDetail==='function'){
+    window.modelDetail=function(m){
+      baseModelDetail(m);
+      bindCompletedCutCardsFinal();
+      setTimeout(bindCompletedCutCardsFinal,0);
+    };
+  }
+  const baseRender=window.render;
+  if(typeof baseRender==='function'){
+    window.render=function(){
+      const r=baseRender.apply(this,arguments);
+      setTimeout(bindCompletedCutCardsFinal,0);
+      return r;
+    };
+  }
+  window.retagBindCompletedCuts=bindCompletedCutCardsFinal;
+})();
+</script>
 <script>
 /* RETAG V40 TEST DATA LOADER
    Prototype-only dataset. Replaces current local data after confirmation.
@@ -2212,7 +2216,7 @@ function recipeAdd(id){
         materials:[{materialId:materialIds.crepe,qty:50}],
         start:now,end:now,note:'قصة اختبار مكتملة — 50 متر → 20 قطعة',
         pieces:20,piecesProduced:20,piecesReady:0,piecesInProgress:20,
-        actualMetersPerPiece:2.5,status:'جاري التجهيز',sequence:1,cutNo:1
+        actualMetersPerPiece:2.5,status:'مكتملة',sequence:1,cutNo:1
       }],
       sales:[],
       payments:[],
@@ -2242,7 +2246,6 @@ function recipeAdd(id){
   setTimeout(addTestButton,300);
 })();
 </script>
-
 </html>
 <script>
 
