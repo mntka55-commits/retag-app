@@ -2109,6 +2109,29 @@ function recipeAdd(id){
     ]
   };
 
+  // V42: restore the actual read-only completed-cut detail action.
+  // V40 cleanup removed the function while keeping the binder, so the binder
+  // correctly refused to attach because window.cutReadOnly was missing.
+  window.cutReadOnly=function(id){
+    const c=arr('cuts').find(x=>Number(x.id)===Number(id));
+    if(!c)return;
+    const x=arr('models').find(m=>Number(m.id)===Number(c.modelId));
+    const mats=(c.materials||[{materialId:c.materialId,qty:c.fabricQty}]).map(a=>{
+      const m=arr('materials').find(z=>Number(z.id)===Number(a.materialId));
+      return `<div class="item"><span>${typeof esc==='function'?esc(m?.name||'خامة'):String(m?.name||'خامة')}${m?.color?' — '+(typeof esc==='function'?esc(m.color):String(m.color)):''}</span><b>${N(a.qty)} ${typeof esc==='function'?esc(m?.unit||'متر'):String(m?.unit||'متر')}</b></div>`;
+    }).join('');
+    const duration=(c.start&&c.end)?Math.max(0,(new Date(c.end)-new Date(c.start))/60000):null;
+    const label=typeof window.cutLabel==='function'?window.cutLabel(c):`${x?.name||'موديل'} — قصّة رقم ${N(c.sequence||c.cutNo)||1}`;
+    const moneyFn=typeof window.money==='function'?window.money:(v)=>N(v).toLocaleString('ar-EG')+' ج';
+    modal('📋 بيانات القصّة',
+      `<div class="card"><div class="title">${typeof esc==='function'?esc(label):label}</div><div class="muted">الحالة: مكتملة</div></div>`+
+      `<div class="card"><div class="title">🧵 الخامات الداخلة للبنك</div>${mats||'<div class="empty">لا توجد بيانات خامات</div>'}</div>`+
+      `<div class="grid"><div class="card metric"><span>الناتج الفعلي</span><b>${N(c.piecesProduced||c.pieces)} قطعة</b></div>`+
+      `<div class="card metric"><span>الاستهلاك الفعلي</span><b>${N(c.actualMetersPerPiece||0).toFixed(2)} متر/قطعة</b></div></div>`+
+      `<div class="card"><div class="muted">تاريخ البداية: ${c.start?new Date(c.start).toLocaleString('ar-EG'):'—'}</div><div class="muted">تاريخ الإنهاء: ${c.end?new Date(c.end).toLocaleString('ar-EG'):'—'}</div>${duration!==null?`<div class="muted">المدة: ${Math.round(duration)} دقيقة</div>`:''}<div class="muted">ملاحظة: ${typeof esc==='function'?esc(c.note||'لا توجد'):String(c.note||'لا توجد')}</div></div>`
+    );
+  };
+
   function findCompletedCutCard(card, modelId){
     const tag=[...card.querySelectorAll(':scope > .split .tag')].find(t=>(t.textContent||'').trim()==='مكتملة');
     if(!tag)return null;
